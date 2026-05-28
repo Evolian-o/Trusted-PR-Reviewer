@@ -3,7 +3,8 @@ import aiohttp
 from collections.abc import AsyncIterator
 from .base import BaseLLMProvider, ReviewPrompt
 
-OLLAMA_API = "http://localhost:11434/api"
+OLLAMA_BASE = "http://localhost:11434"
+OLLAMA_API = f"{OLLAMA_BASE}/api"
 
 
 class OllamaProvider(BaseLLMProvider):
@@ -26,24 +27,29 @@ class OllamaProvider(BaseLLMProvider):
             ],
             "stream": True,
         }
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"{OLLAMA_API}/chat", json=payload) as resp:
-                resp.raise_for_status()
-                async for line in resp.content:
-                    line = line.decode("utf-8").strip()
-                    if not line:
-                        continue
-                    try:
-                        chunk = json.loads(line)
-                        if "message" in chunk and "content" in chunk["message"]:
-                            yield chunk["message"]["content"]
-                    except json.JSONDecodeError:
-                        continue
+        timeout = aiohttp.ClientTimeout(total=120)
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(f"{OLLAMA_API}/chat", json=payload) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.content:
+                        line = line.decode("utf-8").strip()
+                        if not line:
+                            continue
+                        try:
+                            chunk = json.loads(line)
+                            if "message" in chunk and "content" in chunk["message"]:
+                                yield chunk["message"]["content"]
+                        except json.JSONDecodeError:
+                            continue
+        except aiohttp.ClientError as e:
+            raise RuntimeError(f"Ollama 请求失败: {e}") from e
 
     async def health_check(self) -> bool:
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get("http://localhost:11434/api/tags") as resp:
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(f"{OLLAMA_BASE}/api/tags") as resp:
                     return resp.status == 200
-        except Exception:
+        except aiohttp.ClientError:
             return False
