@@ -9,7 +9,7 @@ from services.github_adapter import parse_pr_url, fetch_pr
 from services.diff_parser import chunk_pr
 from services.prompt_builder import SYSTEM_PROMPT, build_user_prompt
 from services.llm_providers.base import ReviewPrompt
-from services.llm_providers.factory import get_provider
+from services.llm_providers.factory import get_provider, list_providers
 from services.result_formatter import parse_llm_output, build_review_result
 from models.review import FileReview
 
@@ -27,6 +27,12 @@ app.add_middleware(
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/api/providers")
+async def providers():
+    names = list_providers()
+    return {"providers": names}
 
 
 async def event_stream(pr_url: str, provider_name: str, model: str | None):

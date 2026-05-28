@@ -1,3 +1,4 @@
+import os
 from .base import BaseLLMProvider
 from .ollama import OllamaProvider
 
@@ -7,6 +8,14 @@ _providers: dict[str, BaseLLMProvider] = {}
 def _register_defaults():
     if "ollama" not in _providers:
         _providers["ollama"] = OllamaProvider()
+
+    if "doubao" not in _providers and os.environ.get("DOUBAO_API_KEY"):
+        from .doubao import DoubaoProvider
+        _providers["doubao"] = DoubaoProvider()
+
+    if "openai" not in _providers and os.environ.get("OPENAI_API_KEY"):
+        from .openai import OpenAIProvider
+        _providers["openai"] = OpenAIProvider()
 
 
 def get_provider(name: str) -> BaseLLMProvider:
