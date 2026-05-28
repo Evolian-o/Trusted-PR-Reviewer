@@ -1,3 +1,4 @@
+import os
 import re
 import aiohttp
 from models.review import PRInfo, FileChange
@@ -24,7 +25,6 @@ def parse_pr_url(url: str) -> tuple[str, str, int]:
 
 
 def detect_language(filename: str) -> str:
-    import os
     ext = os.path.splitext(filename)[1].lower()
     return LANGUAGE_MAP.get(ext, "")
 
@@ -34,27 +34,42 @@ async def fetch_pr(owner: str, repo: str, pull_number: int, token: str | None = 
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
-    async with aiohttp.ClientSession(headers=headers) as session:
+    timeout = aiohttp.ClientTimeout(total=30)
+    async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
         pr_url = f"{GITHUB_API}/repos/{owner}/{repo}/pulls/{pull_number}"
         async with session.get(pr_url) as resp:
             if resp.status == 404:
                 raise ValueError(f"PR 不存在: {owner}/{repo}#{pull_number}")
             if resp.status == 403:
-                raise RuntimeError("GitHub API 限流，请稍后重试或提供 Token")
+                remaining = resp.headers.get("X-RateLimit-Remaining")
+                if remaining is not None and int(remaining) == 0:
+                    raise RuntimeError("GitHub API 限流，请稍后重试或提供 Token")
+                raise RuntimeError("GitHub API 访问被拒绝 (403)，请检查仓库权限或 Token 有效性")
             resp.raise_for_status()
             pr_data = await resp.json()
 
-        files_url = f"{pr_url}/files"
-        async with session.get(files_url, params={"per_page": 100}) as resp:
-            resp.raise_for_status()
-            files_data = await resp.json()
+        # 分页获取所有文件（GitHub 每页最多返回 100 个文件）
+        files_data = []
+        page_url = f"{pr_url}/files?per_page=100"
+        while page_url:
+            async with session.get(page_url) as resp:
+                resp.raise_for_status()
+                files_data.extend(await resp.json())
+                # 解析 Link 响应头获取下一页 URL
+                link = resp.headers.get("Link", "")
+                page_url = None
+                if 'rel="next"' in link:
+                    for part in link.split(","):
+                        if 'rel="next"' in part:
+                            page_url = part.split(";")[0].strip(" <>")
+                            break
 
     files = []
     for f in files_data:
         files.append(FileChange(
             filename=f["filename"],
             status=f["status"],
-            patch=f.get("patch", ""),
+            patch=f.get("patch") or "",
             additions=f["additions"],
             deletions=f["deletions"],
             language=detect_language(f["filename"]),

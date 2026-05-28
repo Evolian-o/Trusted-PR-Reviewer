@@ -20,6 +20,9 @@ def filter_patch(patch: str) -> str:
 
 def split_large_file(fc: FileChange) -> list[FileChange]:
     """大文件按行数二次拆分"""
+    if not fc.patch:
+        return [fc]
+
     lines = fc.patch.split("\n")
     if len(lines) <= MAX_DIFF_LINES:
         return [fc]
