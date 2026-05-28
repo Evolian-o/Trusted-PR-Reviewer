@@ -111,11 +111,11 @@ async def event_stream(pr_url: str, provider_name: str, model: str | None):
         }
 
     except ValueError as e:
-        yield {"event": "error", "data": str(e)}
+        yield {"event": "review_error", "data": str(e)}
     except RuntimeError as e:
-        yield {"event": "error", "data": str(e)}
+        yield {"event": "review_error", "data": str(e)}
     except Exception as e:
-        yield {"event": "error", "data": f"未知错误: {str(e)}"}
+        yield {"event": "review_error", "data": f"未知错误: {str(e)}"}
 
 
 @app.get("/api/review")
