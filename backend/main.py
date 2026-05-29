@@ -233,7 +233,7 @@ async def event_stream(pr_url: str, provider_name: str, model: str | None):
 
         # Step 2: 获取 PR
         yield {"event": "status", "data": f"正在获取 PR 信息: {owner}/{repo}#{pull_number}"}
-        pr = await fetch_pr(owner, repo, pull_number)
+        pr = await fetch_pr(owner, repo, pull_number, token=get_token())
         yield {
             "event": "progress",
             "data": json.dumps({
@@ -275,7 +275,8 @@ async def event_stream(pr_url: str, provider_name: str, model: str | None):
                     yield {"event": "token", "data": token}
                     await asyncio.sleep(0)
             except Exception as e:
-                yield {"event": "review_error", "data": f"LLM 调用失败 [{fc.filename}]: {e}"}
+                msg = str(e).strip() or f"{type(e).__name__}(无详细错误信息)"
+                yield {"event": "review_error", "data": f"LLM 调用失败 [{fc.filename}]: {msg}"}
                 continue
 
             try:
@@ -320,11 +321,11 @@ async def event_stream(pr_url: str, provider_name: str, model: str | None):
             pass  # 保存失败不影响评审响应
 
     except ValueError as e:
-        yield {"event": "review_error", "data": str(e)}
+        yield {"event": "review_error", "data": str(e) or "ValueError: 无详细错误信息"}
     except RuntimeError as e:
-        yield {"event": "review_error", "data": str(e)}
+        yield {"event": "review_error", "data": str(e) or "RuntimeError: 无详细错误信息"}
     except Exception as e:
-        yield {"event": "review_error", "data": f"未知错误: {str(e)}"}
+        yield {"event": "review_error", "data": f"未知错误: {str(e) or type(e).__name__}"}
 
 
 @app.get("/api/review")

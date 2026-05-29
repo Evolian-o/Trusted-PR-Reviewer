@@ -1,4 +1,5 @@
 import json
+import asyncio
 import aiohttp
 from collections.abc import AsyncIterator
 from .base import BaseLLMProvider, ReviewPrompt
@@ -44,10 +45,14 @@ class OllamaProvider(BaseLLMProvider):
                                     yield token
                         except json.JSONDecodeError:
                             continue
+        except asyncio.TimeoutError:
+            raise RuntimeError("Ollama API 超时（600秒），模型冷启动可能未完成") from None
         except aiohttp.ClientError as e:
-            raise RuntimeError(f"Ollama 网络错误: {e}") from e
+            msg = str(e).strip() or f"{type(e).__name__}(无详细错误信息)"
+            raise RuntimeError(f"Ollama 网络错误: {msg}") from e
         except Exception as e:
-            raise RuntimeError(f"Ollama 调用异常: {type(e).__name__}: {e}") from e
+            msg = str(e).strip() or f"{type(e).__name__}(无详细错误信息)"
+            raise RuntimeError(f"Ollama 调用异常: {msg}") from e
 
     async def health_check(self) -> bool:
         try:

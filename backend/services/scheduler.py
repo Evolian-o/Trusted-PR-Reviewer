@@ -1,6 +1,7 @@
 import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from services.auth import get_token
 from services.database import (
     get_active_monitored_repos, update_monitor_sha, get_setting,
 )
@@ -24,7 +25,7 @@ _user_id: int | None = None
 async def auto_review_pr(owner: str, repo: str, pull_number: int, pr_info: dict) -> None:
     """对单个 PR 执行完整评审（无 SSE 流式输出），完成后保存到 DB 并发送邮件通知"""
     try:
-        pr = await fetch_pr(owner, repo, pull_number)
+        pr = await fetch_pr(owner, repo, pull_number, token=get_token())
         chunks = chunk_pr(pr)
 
         provider = await _get_default_provider()

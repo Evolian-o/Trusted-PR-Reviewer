@@ -37,7 +37,7 @@ export default function PRInputPage() {
     if (model) params.set('model', model)
     if (dims.length) params.set('dims', dims.join(','))
 
-    navigate(`/${owner}/${repo.replace('.git', '')}/${pr}?${params.toString()}`)
+    navigate(`/review/${owner}/${repo.replace('.git', '')}/${pr}?${params.toString()}`)
   }
 
   return (
