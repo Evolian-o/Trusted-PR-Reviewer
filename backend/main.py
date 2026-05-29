@@ -1,8 +1,12 @@
 import json
 import asyncio
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from sse_starlette.sse import EventSourceResponse
 
 from services.github_adapter import parse_pr_url, fetch_pr
@@ -11,10 +15,28 @@ from services.prompt_builder import SYSTEM_PROMPT, build_user_prompt
 from services.llm_providers.base import ReviewPrompt
 from services.llm_providers.factory import get_provider, list_providers
 from services.result_formatter import parse_llm_output, build_review_result
-from services.database import save_review, list_reviews, get_review, delete_review
+from services.database import (
+    save_review, list_reviews, get_review, delete_review,
+    add_monitored_repo, remove_monitored_repo, list_monitored_repos,
+    save_email_config, get_email_config, get_all_settings, get_setting, set_setting,
+)
+from services.auth import (
+    get_login_url, complete_auth, is_authenticated, clear_auth, get_user_info,
+    get_token, get_user_id,
+)
 from models.review import FileReview
+from services.scheduler import start_scheduler, stop_scheduler
+from contextlib import asynccontextmanager
+import httpx
 
-app = FastAPI(title="Trusted PR Reviewer")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    await stop_scheduler()
+
+
+app = FastAPI(title="Trusted PR Reviewer", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,6 +49,113 @@ app.add_middleware(
 
 @app.get("/api/health")
 async def health():
+    return {"status": "ok"}
+
+
+# ── 认证端点 ──────────────────────────────────────────────
+
+@app.get("/api/auth/login")
+async def auth_login():
+    return {"url": get_login_url()}
+
+
+@app.get("/api/auth/callback")
+async def auth_callback(code: str = Query(...)):
+    try:
+        await complete_auth(code)
+        # 登录成功后自动启动调度器
+        user_id = get_user_id()
+        if user_id is not None:
+            interval = int(await get_setting(user_id, "poll_interval_seconds", "300"))
+            await start_scheduler(user_id, interval)
+        return RedirectResponse(url="http://localhost:5173/dashboard")
+    except RuntimeError as e:
+        return {"error": str(e)}
+
+
+@app.get("/api/auth/status")
+async def auth_status():
+    if is_authenticated():
+        info = get_user_info()
+        return {
+            "authenticated": True,
+            "login": info["user_login"],
+            "avatar_url": info.get("avatar_url", ""),
+            "user_id": info["user_id"],
+        }
+    return {"authenticated": False}
+
+
+@app.post("/api/auth/logout")
+async def auth_logout():
+    clear_auth()
+    return {"status": "ok"}
+
+
+# ── 仓库 & 监控端点 ──────────────────────────────────────
+
+@app.get("/api/repos")
+async def repo_list():
+    token = get_token()
+    if not token:
+        return {"error": "未认证"}, 401
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            "https://api.github.com/user/repos",
+            params={"sort": "updated", "per_page": 100, "type": "all"},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+        repos = resp.json()
+        if not isinstance(repos, list):
+            return {"error": "获取仓库失败"}, 400
+        result = [
+            {
+                "id": r["id"],
+                "owner": r["owner"]["login"],
+                "repo": r["name"],
+                "full_name": r["full_name"],
+                "description": r.get("description", ""),
+                "private": r["private"],
+                "updated_at": r["updated_at"],
+            }
+            for r in repos
+        ]
+        return {"repos": result}
+
+
+@app.get("/api/monitor")
+async def monitor_list():
+    user_id = get_user_id()
+    if user_id is None:
+        return {"error": "未认证"}, 401
+    repos = await list_monitored_repos(user_id)
+    return {"repos": repos}
+
+
+@app.post("/api/monitor")
+async def monitor_add(data: dict):
+    user_id = get_user_id()
+    if user_id is None:
+        return {"error": "未认证"}, 401
+    owner = data.get("owner", "")
+    repo = data.get("repo", "")
+    if not owner or not repo:
+        return {"error": "缺少 owner 或 repo"}, 400
+    await add_monitored_repo(user_id, owner, repo)
+    return {"status": "ok"}
+
+
+@app.delete("/api/monitor/{repo_id}")
+async def monitor_delete(repo_id: int):
+    user_id = get_user_id()
+    if user_id is None:
+        return {"error": "未认证"}, 401
+    deleted = await remove_monitored_repo(repo_id)
+    if not deleted:
+        return {"error": "记录不存在"}, 404
     return {"status": "ok"}
 
 
@@ -160,3 +289,63 @@ async def history_delete(review_id: int):
     if not deleted:
         return {"error": "记录不存在"}, 404
     return {"status": "ok"}
+
+
+# ── 设置端点 ──────────────────────────────────────────────
+
+@app.get("/api/settings")
+async def settings_get():
+    user_id = get_user_id()
+    if user_id is None:
+        return {"error": "未认证"}, 401
+    kv = await get_all_settings(user_id)
+    email = await get_email_config(user_id)
+    return {
+        "poll_interval_seconds": kv.get("poll_interval_seconds", "300"),
+        "default_provider": kv.get("default_provider", "ollama"),
+        "default_model": kv.get("default_model", ""),
+        "email": {
+            "smtp_host": email.get("smtp_host", "") if email else "",
+            "smtp_port": email.get("smtp_port", 465) if email else 465,
+            "username": email.get("username", "") if email else "",
+            "password": email.get("password", "") if email else "",
+            "to_email": email.get("to_email", "") if email else "",
+            "enabled": bool(email.get("enabled")) if email else False,
+        },
+    }
+
+
+@app.put("/api/settings")
+async def settings_update(data: dict):
+    user_id = get_user_id()
+    if user_id is None:
+        return {"error": "未认证"}, 401
+
+    # 保存通用设置
+    for key in ("poll_interval_seconds", "default_provider", "default_model"):
+        if key in data:
+            await set_setting(user_id, key, str(data[key]))
+
+    # 保存邮件配置
+    email = data.get("email")
+    if email:
+        await save_email_config(user_id, email)
+
+    # 重启调度器（使用新的轮询间隔）
+    interval = int(data.get("poll_interval_seconds", 300))
+    await start_scheduler(user_id, interval)
+
+    return {"status": "ok"}
+
+
+@app.post("/api/settings/email/test")
+async def email_test(data: dict):
+    user_id = get_user_id()
+    if user_id is None:
+        return {"error": "未认证"}, 401
+    from services.email_notifier import send_test_email
+    try:
+        await send_test_email(data)
+        return {"status": "ok"}
+    except Exception as e:
+        return {"error": str(e)}

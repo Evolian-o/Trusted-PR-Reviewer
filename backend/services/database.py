@@ -29,6 +29,44 @@ async def init_db():
         await db.execute(
             "CREATE INDEX IF NOT EXISTS idx_reviews_owner_repo ON reviews(owner, repo)"
         )
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS monitored_repos (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL,
+                owner       TEXT NOT NULL,
+                repo        TEXT NOT NULL,
+                active      INTEGER DEFAULT 1,
+                last_pr_sha TEXT,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+        """)
+        await db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_monitor_user_repo ON monitored_repos(user_id, owner, repo)"
+        )
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS email_config (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id     INTEGER NOT NULL UNIQUE,
+                smtp_host   TEXT NOT NULL,
+                smtp_port   INTEGER NOT NULL,
+                username    TEXT NOT NULL,
+                password    TEXT NOT NULL,
+                to_email    TEXT NOT NULL,
+                enabled     INTEGER DEFAULT 0
+            )
+        """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                user_id  INTEGER NOT NULL,
+                key      TEXT NOT NULL,
+                value    TEXT NOT NULL,
+                PRIMARY KEY (user_id, key)
+            )
+        """)
+
         await db.commit()
 
 
@@ -111,3 +149,136 @@ async def delete_review(review_id: int) -> bool:
         cursor = await db.execute("DELETE FROM reviews WHERE id=?", (review_id,))
         await db.commit()
         return cursor.rowcount > 0
+
+
+# ── 监控仓库 ──────────────────────────────────────────────
+
+async def add_monitored_repo(user_id: int, owner: str, repo: str) -> int:
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "INSERT OR IGNORE INTO monitored_repos (user_id, owner, repo) VALUES (?, ?, ?)",
+            (user_id, owner, repo),
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def remove_monitored_repo(repo_id: int) -> bool:
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("DELETE FROM monitored_repos WHERE id=?", (repo_id,))
+        await db.commit()
+        return cursor.rowcount > 0
+
+
+async def list_monitored_repos(user_id: int) -> list[dict]:
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM monitored_repos WHERE user_id=? ORDER BY created_at DESC",
+            (user_id,),
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+
+async def get_monitored_repo_by_name(user_id: int, owner: str, repo: str) -> dict | None:
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM monitored_repos WHERE user_id=? AND owner=? AND repo=?",
+            (user_id, owner, repo),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def update_monitor_sha(repo_id: int, sha: str) -> None:
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE monitored_repos SET last_pr_sha=? WHERE id=?", (sha, repo_id)
+        )
+        await db.commit()
+
+
+async def set_monitor_active(repo_id: int, active: bool) -> None:
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE monitored_repos SET active=? WHERE id=?", (1 if active else 0, repo_id)
+        )
+        await db.commit()
+
+
+async def get_active_monitored_repos(user_id: int) -> list[dict]:
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM monitored_repos WHERE user_id=? AND active=1", (user_id,)
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+
+# ── 邮件配置 ──────────────────────────────────────────────
+
+async def save_email_config(user_id: int, config: dict) -> None:
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """INSERT OR REPLACE INTO email_config
+               (user_id, smtp_host, smtp_port, username, password, to_email, enabled)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                user_id, config["smtp_host"], config["smtp_port"],
+                config["username"], config["password"],
+                config["to_email"], 1 if config.get("enabled") else 0,
+            ),
+        )
+        await db.commit()
+
+
+async def get_email_config(user_id: int) -> dict | None:
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM email_config WHERE user_id=?", (user_id,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+# ── 设置 ──────────────────────────────────────────────────
+
+async def get_all_settings(user_id: int) -> dict:
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT key, value FROM settings WHERE user_id=?", (user_id,)
+        )
+        return {row["key"]: row["value"] for row in await cursor.fetchall()}
+
+
+async def get_setting(user_id: int, key: str, default: str = "") -> str:
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT value FROM settings WHERE user_id=? AND key=?", (user_id, key)
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else default
+
+
+async def set_setting(user_id: int, key: str, value: str) -> None:
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR REPLACE INTO settings (user_id, key, value) VALUES (?, ?, ?)",
+            (user_id, key, value),
+        )
+        await db.commit()
