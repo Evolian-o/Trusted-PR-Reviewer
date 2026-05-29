@@ -117,7 +117,7 @@ async def list_reviews(owner: str | None = None, repo: str | None = None) -> lis
             cursor = await db.execute(
                 """SELECT id, owner, repo, pull_number, pr_title, pr_url,
                    provider, model, files_changed, additions, deletions,
-                   risk_level, issue_count, suggestion_count, created_at
+                   risk_level, issue_count, suggestion_count, result_json, created_at
                 FROM reviews WHERE owner=? AND repo=?
                 ORDER BY created_at DESC""",
                 (owner, repo),
@@ -126,7 +126,7 @@ async def list_reviews(owner: str | None = None, repo: str | None = None) -> lis
             cursor = await db.execute(
                 """SELECT id, owner, repo, pull_number, pr_title, pr_url,
                    provider, model, files_changed, additions, deletions,
-                   risk_level, issue_count, suggestion_count, created_at
+                   risk_level, issue_count, suggestion_count, result_json, created_at
                 FROM reviews WHERE owner=?
                 ORDER BY created_at DESC""",
                 (owner,),
@@ -135,7 +135,7 @@ async def list_reviews(owner: str | None = None, repo: str | None = None) -> lis
             cursor = await db.execute(
                 """SELECT id, owner, repo, pull_number, pr_title, pr_url,
                    provider, model, files_changed, additions, deletions,
-                   risk_level, issue_count, suggestion_count, created_at
+                   risk_level, issue_count, suggestion_count, result_json, created_at
                 FROM reviews ORDER BY created_at DESC"""
             )
         return [dict(row) for row in await cursor.fetchall()]

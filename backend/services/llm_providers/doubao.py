@@ -8,7 +8,7 @@ DOUBAO_API_URL = "https://ark.cn-beijing.volces.com/api/v3"
 
 
 class DoubaoProvider(BaseLLMProvider):
-    def __init__(self, default_model: str = "doubao-pro-32k"):
+    def __init__(self, default_model: str = "Doubao-Seed-2.0-pro"):
         self._default_model = default_model
         self._api_key = os.environ.get("DOUBAO_API_KEY", "")
 

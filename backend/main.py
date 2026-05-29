@@ -1,8 +1,9 @@
 import json
 import asyncio
 
+import os
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"), override=True)
 
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware

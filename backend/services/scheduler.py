@@ -97,7 +97,7 @@ async def _get_default_model(provider_name: str) -> str | None:
     if model:
         return model
     defaults = {"ollama": "qwen3.5:latest", "deepseek": "deepseek-chat",
-                 "doubao": "doubao-pro-32k", "openai": "gpt-4o-mini"}
+                 "doubao": "Doubao-Seed-2.0-pro", "openai": "gpt-4o-mini"}
     return defaults.get(provider_name)
 
 
