@@ -47,6 +47,11 @@ export default function DashboardPage() {
   const [recentReviews, setRecentReviews] = useState<HistoryItem[]>([])
   const [search, setSearch] = useState('')
   const [reposLoading, setReposLoading] = useState(false)
+  const [schedulerStatus, setSchedulerStatus] = useState<{
+    running: boolean
+    monitored_repos: number
+    interval_seconds: number
+  } | null>(null)
   const navigate = useNavigate()
 
   // 认证检查
@@ -83,6 +88,33 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!checking) loadData()
   }, [checking, loadData])
+
+  // 调度器状态
+  const fetchSchedulerStatus = useCallback(async () => {
+    try {
+      const resp = await fetch('/api/scheduler/status')
+      if (resp.ok) {
+        const data = await resp.json()
+        setSchedulerStatus(data)
+      }
+    } catch { /* ignore */ }
+  }, [])
+
+  useEffect(() => {
+    if (!checking) {
+      fetchSchedulerStatus()
+      const i = setInterval(fetchSchedulerStatus, 30000)
+      return () => clearInterval(i)
+    }
+  }, [checking, fetchSchedulerStatus])
+
+  const toggleScheduler = async () => {
+    const endpoint = schedulerStatus?.running
+      ? '/api/scheduler/stop'
+      : '/api/scheduler/start'
+    await fetch(endpoint, { method: 'POST' })
+    await fetchSchedulerStatus()
+  }
 
   const monitoredSet = new Set(monitored.map((m) => `${m.owner}/${m.repo}`))
 
@@ -217,6 +249,42 @@ export default function DashboardPage() {
 
           {/* 最近评审 */}
           <div className="w-80 flex-shrink-0">
+            {/* 调度器状态 */}
+            {schedulerStatus && (
+              <div className="mb-4 p-3 bg-gray-800 rounded-lg border border-gray-700">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-gray-300">自动监控</span>
+                  <span className={`flex items-center gap-1.5 text-xs font-medium ${
+                    schedulerStatus.running ? 'text-green-400' : 'text-gray-500'
+                  }`}>
+                    <span className={`w-2 h-2 rounded-full ${
+                      schedulerStatus.running ? 'bg-green-400 animate-pulse' : 'bg-gray-600'
+                    }`} />
+                    {schedulerStatus.running ? '运行中' : '已停止'}
+                  </span>
+                </div>
+                <div className="text-xs text-gray-500 space-y-1">
+                  <div className="flex justify-between">
+                    <span>监控仓库</span>
+                    <span>{schedulerStatus.monitored_repos} 个</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>轮询间隔</span>
+                    <span>{schedulerStatus.interval_seconds}s</span>
+                  </div>
+                </div>
+                <button
+                  onClick={toggleScheduler}
+                  className={`mt-2 w-full py-1 text-xs rounded transition-colors ${
+                    schedulerStatus.running
+                      ? 'bg-red-900/40 text-red-400 hover:bg-red-900/60'
+                      : 'bg-green-900/40 text-green-400 hover:bg-green-900/60'
+                  }`}
+                >
+                  {schedulerStatus.running ? '停止监控' : '启动监控'}
+                </button>
+              </div>
+            )}
             <h2 className="text-lg font-semibold text-white mb-4">最近评审</h2>
             {recentReviews.length === 0 ? (
               <p className="text-gray-500 text-sm">暂无评审记录</p>

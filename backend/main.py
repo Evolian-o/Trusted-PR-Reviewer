@@ -1,6 +1,6 @@
 import json
 import asyncio
-
+import logging
 import os
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"), override=True)
@@ -36,13 +36,28 @@ from services.auth import (
     get_token, get_user_id,
 )
 from models.review import FileReview
-from services.scheduler import start_scheduler, stop_scheduler
+from services.scheduler import start_scheduler, stop_scheduler, get_scheduler_status, restore_scheduler
+from services.email_notifier import send_review_notification
 from contextlib import asynccontextmanager
 import httpx
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 启动时尝试恢复调度器（从 DB 读取已配置的 user）
+    try:
+        from services.database import get_all_settings
+        # 尝试从 DB 恢复最近活跃用户的调度器
+        from services.database import get_db
+        db = await get_db()
+        cursor = await db.execute(
+            "SELECT DISTINCT user_id FROM monitored_repos WHERE active=1 LIMIT 1"
+        )
+        row = await cursor.fetchone()
+        if row:
+            await restore_scheduler(row[0])
+    except Exception:
+        pass
     yield
     await stop_scheduler()
 
@@ -168,6 +183,39 @@ async def monitor_delete(repo_id: int):
     if not deleted:
         return {"error": "记录不存在"}, 404
     return {"status": "ok"}
+
+
+# ── 调度器端点 ──────────────────────────────────────────────
+
+@app.get("/api/scheduler/status")
+async def scheduler_status():
+    user_id = get_user_id()
+    if user_id is None:
+        return {"error": "未认证"}, 401
+    status = get_scheduler_status()
+    # 补充监控仓库数量
+    repos = await list_monitored_repos(user_id)
+    status["monitored_repos"] = len([r for r in repos if r.get("active")])
+    return status
+
+
+@app.post("/api/scheduler/start")
+async def scheduler_start():
+    user_id = get_user_id()
+    if user_id is None:
+        return {"error": "未认证"}, 401
+    interval = int(await get_setting(user_id, "poll_interval_seconds", "300"))
+    await start_scheduler(user_id, interval)
+    return {"status": "ok", "message": f"调度器已启动，间隔 {interval}s"}
+
+
+@app.post("/api/scheduler/stop")
+async def scheduler_stop():
+    user_id = get_user_id()
+    if user_id is None:
+        return {"error": "未认证"}, 401
+    await stop_scheduler()
+    return {"status": "ok", "message": "调度器已停止"}
 
 
 @app.get("/api/repos/{owner}/{repo}/pulls")
@@ -518,8 +566,14 @@ async def event_stream(pr_url: str, provider_name: str, model: str | None):
         # 持久化保存
         try:
             review_id = await save_review(pr_url, provider_name, model, result)
-        except Exception:
-            pass  # 保存失败不影响评审响应
+        except Exception as e:
+            logging.getLogger("main").error(f"保存评审记录失败: {e}")
+
+        # 邮件通知
+        try:
+            await send_review_notification(owner, repo, pr.title, result)
+        except Exception as e:
+            logging.getLogger("main").error(f"邮件通知失败: {e}")
 
     except ValueError as e:
         yield {"event": "review_error", "data": str(e) or "ValueError: 无详细错误信息"}

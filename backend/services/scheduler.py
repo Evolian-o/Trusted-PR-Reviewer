@@ -46,6 +46,7 @@ async def auto_review_pr(owner: str, repo: str, pull_number: int, pr_info: dict)
 
         provider = await _get_default_provider()
         model = await _get_default_model(provider.name)
+        logger.info(f"自动评审开始: {owner}/{repo}#{pull_number} provider={provider.name} model={model}")
 
         file_reviews = []
         for fc in chunks:
@@ -81,11 +82,11 @@ async def auto_review_pr(owner: str, repo: str, pull_number: int, pr_info: dict)
 
         # 邮件通知
         try:
-            await send_review_notification(owner, repo, pr.title, result)
-        except Exception:
-            pass
+            await send_review_notification(owner, repo, pr.title, result, user_id=_user_id)
+        except Exception as e:
+            logger.error(f"邮件发送异常: {e}")
 
-        logger.info(f"自动评审完成: {owner}/{repo}#{pull_number} 风险={result.risk_level}")
+        logger.info(f"自动评审完成: {owner}/{repo}#{pull_number} 风险={result.risk_level} 问题={len(result.issues)}")
     except Exception as e:
         logger.error(f"自动评审失败 {owner}/{repo}#{pull_number}: {e}")
 
@@ -132,11 +133,12 @@ async def _poll_repos(user_id: int) -> None:
 
 
 async def start_scheduler(user_id: int, interval_seconds: int = 300) -> None:
-    global _scheduler, _user_id
+    global _scheduler, _user_id, _last_interval
     if _scheduler is not None:
         _scheduler.shutdown(wait=False)
 
     _user_id = user_id
+    _last_interval = interval_seconds
     _scheduler = AsyncIOScheduler()
     _scheduler.add_job(
         _poll_repos, "interval", seconds=interval_seconds, args=[user_id],
@@ -144,6 +146,33 @@ async def start_scheduler(user_id: int, interval_seconds: int = 300) -> None:
     )
     _scheduler.start()
     logger.info(f"调度器已启动: user_id={user_id} interval={interval_seconds}s")
+
+
+def get_scheduler_status() -> dict:
+    """查询调度器运行状态"""
+    global _scheduler, _user_id
+    if _scheduler is None:
+        return {"running": False, "user_id": _user_id, "interval_seconds": 0}
+    return {
+        "running": bool(_scheduler.running),
+        "user_id": _user_id,
+        "interval_seconds": _last_interval,
+    }
+
+
+_last_interval: int = 300
+
+
+async def restore_scheduler(user_id: int) -> dict:
+    """服务启动时恢复调度器（从 DB 读取配置）"""
+    interval = int(await get_setting(user_id, "poll_interval_seconds", "300"))
+    await start_scheduler(user_id, interval)
+    return {
+        "running": True,
+        "user_id": user_id,
+        "interval_seconds": interval,
+        "message": "调度器已恢复",
+    }
 
 
 async def stop_scheduler() -> None:
