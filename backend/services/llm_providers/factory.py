@@ -17,6 +17,11 @@ def _register_defaults():
         from .openai import OpenAIProvider
         _providers["openai"] = OpenAIProvider()
 
+    if "deepseek" not in _providers and os.environ.get("DEEPSEEK_API_KEY"):
+        from .deepseek import DeepSeekProvider
+        _providers["deepseek"] = DeepSeekProvider()
+
+
 
 def get_provider(name: str) -> BaseLLMProvider:
     _register_defaults()

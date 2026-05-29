@@ -7,12 +7,14 @@ interface Props {
 
 const PROVIDER_OPTIONS = [
   { value: 'ollama', label: 'Ollama (本地)' },
+  { value: 'deepseek', label: 'DeepSeek (在线)' },
   { value: 'doubao', label: '豆包 (在线)' },
   { value: 'openai', label: 'OpenAI (在线)' },
 ]
 
 const DEFAULT_MODELS: Record<string, string> = {
   ollama: 'qwen3.5:latest',
+  deepseek: 'deepseek-chat',
   doubao: 'doubao-pro-32k',
   openai: 'gpt-4o-mini',
 }
