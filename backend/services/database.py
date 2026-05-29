@@ -45,14 +45,14 @@ async def init_db():
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_monitor_user_repo ON monitored_repos(user_id, owner, repo)"
         )
 
-        # 迁移旧表（自动删除不兼容的旧 schema）
+        # 迁移旧表（检测旧 schema 含 smtp_host 则删除重建）
         cursor = await db.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='email_config'"
         )
         if await cursor.fetchone():
             cols = await db.execute("PRAGMA table_info(email_config)")
             col_names = [row[1] for row in await cols.fetchall()]
-            if "password" not in col_names:
+            if "smtp_host" in col_names:
                 await db.execute("DROP TABLE email_config")
 
         await db.execute("""
@@ -71,6 +71,23 @@ async def init_db():
                 key      TEXT NOT NULL,
                 value    TEXT NOT NULL,
                 PRIMARY KEY (user_id, key)
+            )
+        """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS custom_providers (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id         INTEGER NOT NULL,
+                name            TEXT NOT NULL,
+                display_name    TEXT NOT NULL,
+                base_url        TEXT NOT NULL,
+                api_key_enc     TEXT NOT NULL,
+                default_model   TEXT NOT NULL,
+                timeout         INTEGER DEFAULT 120,
+                is_enabled      INTEGER DEFAULT 1,
+                created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(user_id, name)
             )
         """)
 
@@ -288,3 +305,82 @@ async def set_setting(user_id: int, key: str, value: str) -> None:
             (user_id, key, value),
         )
         await db.commit()
+
+
+# ── 自定义提供商 ────────────────────────────────────────────
+
+async def list_custom_providers(user_id: int) -> list[dict]:
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM custom_providers WHERE user_id=? ORDER BY created_at ASC",
+            (user_id,),
+        )
+        return [dict(row) for row in await cursor.fetchall()]
+
+
+async def get_custom_provider(user_id: int, name: str) -> dict | None:
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM custom_providers WHERE user_id=? AND name=?",
+            (user_id, name),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def create_custom_provider(user_id: int, data: dict) -> int:
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            """INSERT INTO custom_providers
+               (user_id, name, display_name, base_url, api_key_enc, default_model, timeout)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                user_id,
+                data["name"],
+                data["display_name"],
+                data["base_url"],
+                data["api_key_enc"],
+                data.get("default_model", ""),
+                data.get("timeout", 120),
+            ),
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+
+async def update_custom_provider(user_id: int, name: str, data: dict) -> bool:
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        sets = []
+        params = []
+        for field in ("display_name", "base_url", "api_key_enc", "default_model",
+                       "timeout", "is_enabled"):
+            if field in data:
+                sets.append(f"{field}=?")
+                params.append(data[field])
+        if not sets:
+            return False
+        sets.append("updated_at=datetime('now')")
+        params.extend([user_id, name])
+        await db.execute(
+            f"UPDATE custom_providers SET {', '.join(sets)} WHERE user_id=? AND name=?",
+            params,
+        )
+        await db.commit()
+        return True
+
+
+async def delete_custom_provider(user_id: int, name: str) -> bool:
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "DELETE FROM custom_providers WHERE user_id=? AND name=?",
+            (user_id, name),
+        )
+        await db.commit()
+        return cursor.rowcount > 0

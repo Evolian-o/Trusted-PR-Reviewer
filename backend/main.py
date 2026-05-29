@@ -14,12 +14,22 @@ from services.github_adapter import parse_pr_url, fetch_pr
 from services.chunking import chunk_pr as smart_chunk_pr
 from services.prompt_builder import SYSTEM_PROMPT, build_user_prompt
 from services.llm_providers.base import ReviewPrompt
-from services.llm_providers.factory import get_provider, list_providers
+from services.llm_providers.factory import (
+    get_provider, list_providers_with_meta, load_custom_providers,
+    register_custom_provider, unregister_custom_provider, is_builtin,
+    get_provider_info,
+)
+from services.llm_providers.crypto import encrypt, decrypt
 from services.result_formatter import parse_llm_output, build_review_result
 from services.database import (
     save_review, list_reviews, get_review, delete_review,
     add_monitored_repo, remove_monitored_repo, list_monitored_repos,
     save_email_config, get_email_config, get_all_settings, get_setting, set_setting,
+    list_custom_providers as db_list_custom_providers,
+    get_custom_provider as db_get_custom_provider,
+    create_custom_provider as db_create_custom_provider,
+    update_custom_provider as db_update_custom_provider,
+    delete_custom_provider as db_delete_custom_provider,
 )
 from services.auth import (
     get_login_url, complete_auth, is_authenticated, clear_auth, get_user_info,
@@ -221,8 +231,171 @@ async def repo_create_pr(owner: str, repo: str, data: dict):
 
 @app.get("/api/providers")
 async def providers():
-    names = list_providers()
-    return {"providers": names}
+    """返回所有可用提供商（内置 + 自定义），含元数据"""
+    user_id = get_user_id() or 0
+    if user_id:
+        await load_custom_providers(user_id)
+    return {"providers": list_providers_with_meta()}
+
+
+@app.get("/api/providers/{name}/models")
+async def provider_models(name: str):
+    """获取指定提供商的模型列表（代理到上游 API）"""
+    user_id = get_user_id() or 0
+    if user_id:
+        await load_custom_providers(user_id)
+    try:
+        provider = get_provider(name)
+    except ValueError:
+        return {"error": f"未知提供商: {name}"}, 404
+
+    if hasattr(provider, "list_models"):
+        models = await provider.list_models()
+        return {"models": models}
+    return {"models": []}
+
+
+@app.post("/api/providers/custom")
+async def provider_create(data: dict):
+    """添加自定义 OpenAI 兼容提供商"""
+    user_id = get_user_id()
+    if user_id is None:
+        return {"error": "未认证"}, 401
+
+    name = (data.get("name") or "").strip().lower()
+    if not name:
+        return {"error": "name 不能为空"}, 400
+    if is_builtin(name):
+        return {"error": f"'{name}' 是内置提供商，不能覆盖"}, 409
+
+    display_name = (data.get("display_name") or "").strip()
+    base_url = (data.get("base_url") or "").strip()
+    api_key = (data.get("api_key") or "").strip()
+    default_model = (data.get("default_model") or "").strip()
+
+    if not display_name or not base_url or not api_key:
+        return {"error": "display_name / base_url / api_key 为必填"}, 400
+
+    # 检查是否已存在同名自定义提供商
+    existing = await db_get_custom_provider(user_id, name)
+    if existing:
+        return {"error": f"'{name}' 已存在"}, 409
+
+    api_key_enc = encrypt(api_key)
+    row_data = {
+        "name": name,
+        "display_name": display_name,
+        "base_url": base_url,
+        "api_key_enc": api_key_enc,
+        "default_model": default_model,
+        "timeout": data.get("timeout", 120),
+    }
+    await db_create_custom_provider(user_id, row_data)
+
+    # 注册到内存
+    from services.llm_providers.openai_compatible import OpenAICompatibleProvider
+    provider = OpenAICompatibleProvider(
+        name=name, base_url=base_url, api_key=api_key,
+        default_model=default_model,
+        timeout=data.get("timeout", 120),
+        is_builtin=False,
+    )
+    register_custom_provider(name, provider)
+    return {"status": "ok", "name": name}
+
+
+@app.put("/api/providers/custom/{name}")
+async def provider_update(name: str, data: dict):
+    """更新自定义提供商配置"""
+    user_id = get_user_id()
+    if user_id is None:
+        return {"error": "未认证"}, 401
+
+    if is_builtin(name):
+        return {"error": f"'{name}' 是内置提供商，不可修改"}, 403
+
+    existing = await db_get_custom_provider(user_id, name)
+    if not existing:
+        return {"error": f"'{name}' 不存在"}, 404
+
+    updates = {}
+    for field in ("display_name", "base_url", "default_model", "timeout", "is_enabled"):
+        if field in data:
+            updates[field] = data[field]
+    if "api_key" in data and data["api_key"]:
+        updates["api_key_enc"] = encrypt(data["api_key"])
+
+    if updates:
+        await db_update_custom_provider(user_id, name, updates)
+
+    # 重新加载到内存（先移除旧的，再注册新的）
+    unregister_custom_provider(name)
+    from services.llm_providers.openai_compatible import OpenAICompatibleProvider
+    row = await db_get_custom_provider(user_id, name)
+    if row and row.get("is_enabled"):
+        api_key = decrypt(row["api_key_enc"])
+        provider = OpenAICompatibleProvider(
+            name=name, base_url=row["base_url"], api_key=api_key,
+            default_model=row.get("default_model", ""),
+            timeout=row.get("timeout", 120),
+            is_builtin=False,
+        )
+        register_custom_provider(name, provider)
+
+    return {"status": "ok"}
+
+
+@app.delete("/api/providers/custom/{name}")
+async def provider_delete(name: str):
+    """删除自定义提供商"""
+    user_id = get_user_id()
+    if user_id is None:
+        return {"error": "未认证"}, 401
+
+    if is_builtin(name):
+        return {"error": f"'{name}' 是内置提供商，不可删除"}, 403
+
+    deleted = await db_delete_custom_provider(user_id, name)
+    if not deleted:
+        return {"error": f"'{name}' 不存在"}, 404
+
+    unregister_custom_provider(name)
+    return {"status": "ok"}
+
+
+@app.post("/api/providers/custom/{name}/test")
+async def provider_test(name: str, data: dict | None = None):
+    """测试指定提供商的连接"""
+    user_id = get_user_id()
+    if user_id is None:
+        return {"error": "未认证"}, 401
+
+    from services.llm_providers.openai_compatible import OpenAICompatibleProvider
+
+    if is_builtin(name):
+        try:
+            provider = get_provider(name)
+        except ValueError:
+            return {"ok": False, "error": f"'{name}' 未配置 API Key"}
+    else:
+        # 从请求体或 DB 获取配置
+        if data:
+            api_key = data.get("api_key", "")
+            base_url = data.get("base_url", "")
+        else:
+            row = await db_get_custom_provider(user_id, name)
+            if not row:
+                return {"ok": False, "error": f"'{name}' 不存在"}
+            api_key = decrypt(row["api_key_enc"])
+            base_url = row["base_url"]
+
+        provider = OpenAICompatibleProvider(
+            name=name, base_url=base_url, api_key=api_key,
+            default_model="", is_builtin=False,
+        )
+
+    ok = await provider.health_check()
+    return {"ok": ok} if ok else {"ok": False, "error": "连接失败"}
 
 
 async def event_stream(pr_url: str, provider_name: str, model: str | None):
@@ -247,6 +420,7 @@ async def event_stream(pr_url: str, provider_name: str, model: str | None):
 
         # Step 3: 按文件智能分片
         user_id = get_user_id() or 0
+        await load_custom_providers(user_id)
         max_chars = int(await get_setting(user_id, "chunk_max_chars", "8000"))
         merge_max_chars = int(await get_setting(user_id, "chunk_merge_max_chars", "6000"))
         max_lines = int(await get_setting(user_id, "chunk_max_lines", "2000"))
@@ -263,10 +437,24 @@ async def event_stream(pr_url: str, provider_name: str, model: str | None):
 
         # Step 4: 获取 Provider
         provider = get_provider(provider_name)
+        actual_model = model or provider.default_model
+        print(f"[评审] 提供商={provider_name}  模型={actual_model}", flush=True)
+        yield {
+            "event": "model_info",
+            "data": json.dumps({"provider": provider_name, "model": actual_model}),
+        }
 
         # Step 5: 逐个评审
         file_reviews = []
         for idx, fc in enumerate(chunks, start=1):
+            yield {
+                "event": "file_info",
+                "data": json.dumps({
+                    "filename": fc.filename,
+                    "language": fc.language,
+                    "patch": fc.patch or "",
+                }),
+            }
             yield {
                 "event": "progress",
                 "data": json.dumps({
@@ -417,8 +605,11 @@ async def settings_update(data: dict):
         await save_email_config(user_id, email)
 
     # 重启调度器（使用新的轮询间隔）
-    interval = int(data.get("poll_interval_seconds", 300))
-    await start_scheduler(user_id, interval)
+    try:
+        interval = int(data.get("poll_interval_seconds", 300))
+        await start_scheduler(user_id, interval)
+    except Exception:
+        pass  # 调度器重启失败不影响设置保存
 
     return {"status": "ok"}
 

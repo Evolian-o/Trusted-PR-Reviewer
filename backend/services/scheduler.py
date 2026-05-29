@@ -25,9 +25,12 @@ _user_id: int | None = None
 async def auto_review_pr(owner: str, repo: str, pull_number: int, pr_info: dict) -> None:
     """对单个 PR 执行完整评审（无 SSE 流式输出），完成后保存到 DB 并发送邮件通知"""
     try:
+        from services.llm_providers.factory import load_custom_providers
+        uid = _user_id or 0
+        if uid:
+            await load_custom_providers(uid)
         pr = await fetch_pr(owner, repo, pull_number, token=get_token())
 
-        uid = _user_id or 0
         max_chars = int(await get_setting(uid, "chunk_max_chars", "8000"))
         merge_max_chars = int(await get_setting(uid, "chunk_merge_max_chars", "6000"))
         max_lines = int(await get_setting(uid, "chunk_max_lines", "2000"))
@@ -97,7 +100,7 @@ async def _get_default_model(provider_name: str) -> str | None:
     if model:
         return model
     defaults = {"ollama": "qwen3.5:latest", "deepseek": "deepseek-chat",
-                 "doubao": "Doubao-Seed-2.0-pro", "openai": "gpt-4o-mini"}
+                 "doubao": "doubao-seed-2-0-pro-260215", "openai": "gpt-4o-mini"}
     return defaults.get(provider_name)
 
 
