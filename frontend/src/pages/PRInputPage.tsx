@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import UrlInput from '../components/UrlInput'
 import ModelSelector from '../components/ModelSelector'
@@ -12,7 +12,19 @@ export default function PRInputPage() {
   const [provider, setProvider] = useState('deepseek')
   const [model, setModel] = useState('deepseek-chat')
   const [dims, setDims] = useState(['bug', 'security', 'performance', 'style'])
+  const [checking, setChecking] = useState(true)
   const navigate = useNavigate()
+
+  useEffect(() => {
+    fetch('/api/auth/status')
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data.authenticated) {
+          navigate('/', { replace: true })
+        }
+      })
+      .finally(() => setChecking(false))
+  }, [navigate])
 
   const handleUrlChange = (v: string) => {
     setUrl(v)
@@ -40,39 +52,60 @@ export default function PRInputPage() {
     navigate(`/review/${owner}/${repo.replace('.git', '')}/${pr}?${params.toString()}`)
   }
 
+  if (checking) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+      </div>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
-      <div className="w-full max-w-2xl">
-        <div className="text-center mb-10">
-          <h1 className="text-4xl font-bold text-white mb-3">AI PR Review</h1>
-          <p className="text-gray-400">输入 GitHub PR 链接，智能代码评审</p>
-        </div>
-
-        <div className="bg-gray-850 border border-gray-700 rounded-xl p-8 space-y-6">
-          <UrlInput value={url} onChange={handleUrlChange} error={urlError} />
-          <ModelSelector
-            provider={provider}
-            model={model}
-            onProviderChange={setProvider}
-            onModelChange={setModel}
-          />
-          <DimensionChecklist selected={dims} onChange={setDims} />
-
+    <div className="min-h-screen bg-gray-900">
+      <nav className="border-b border-gray-700 bg-gray-850">
+        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+          <h1 className="text-lg font-bold text-white">AI PR Review</h1>
           <button
-            onClick={handleStart}
-            className="w-full py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-500 transition-colors text-lg"
+            onClick={() => navigate('/dashboard')}
+            className="text-gray-400 hover:text-gray-200 text-sm transition-colors"
           >
-            开始评审
+            返回仪表盘
           </button>
+        </div>
+      </nav>
 
-          <div className="text-center">
-            <a
-              href="/history"
-              onClick={(e) => { e.preventDefault(); navigate('/history') }}
-              className="text-gray-500 hover:text-gray-300 text-sm transition-colors"
+      <div className="flex items-center justify-center px-4 py-12">
+        <div className="w-full max-w-2xl">
+          <div className="text-center mb-10">
+            <h2 className="text-3xl font-bold text-white mb-2">新建评审</h2>
+            <p className="text-gray-400">输入 GitHub PR 链接，选择模型后开始智能代码评审</p>
+          </div>
+
+          <div className="bg-gray-850 border border-gray-700 rounded-xl p-8 space-y-6">
+            <UrlInput value={url} onChange={handleUrlChange} error={urlError} />
+            <ModelSelector
+              provider={provider}
+              model={model}
+              onProviderChange={setProvider}
+              onModelChange={setModel}
+            />
+            <DimensionChecklist selected={dims} onChange={setDims} />
+
+            <button
+              onClick={handleStart}
+              className="w-full py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-500 transition-colors text-lg"
             >
-              评审历史
-            </a>
+              开始评审
+            </button>
+
+            <div className="text-center">
+              <button
+                onClick={() => navigate('/history')}
+                className="text-gray-500 hover:text-gray-300 text-sm transition-colors"
+              >
+                评审历史
+              </button>
+            </div>
           </div>
         </div>
       </div>

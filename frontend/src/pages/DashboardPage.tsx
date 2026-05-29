@@ -28,6 +28,7 @@ interface HistoryItem {
   pr_title: string
   pr_url: string
   provider: string
+  model: string | null
   risk_level: string
   issue_count: number
   created_at: string
@@ -125,6 +126,12 @@ export default function DashboardPage() {
           <h1 className="text-lg font-bold text-white">AI PR Review</h1>
           <div className="flex items-center gap-4">
             <button
+              onClick={() => navigate('/review')}
+              className="bg-blue-600 hover:bg-blue-500 text-white text-sm px-3 py-1.5 rounded-lg transition-colors"
+            >
+              + 新建评审
+            </button>
+            <button
               onClick={() => navigate('/history')}
               className="text-gray-400 hover:text-gray-200 text-sm transition-colors"
             >
@@ -218,7 +225,13 @@ export default function DashboardPage() {
                 {recentReviews.map((r) => (
                   <div
                     key={r.id}
-                    onClick={() => navigate(`/review/${r.owner}/${r.repo}/${r.pull_number}`)}
+                    onClick={() => {
+                      const params = new URLSearchParams()
+                      if (r.provider) params.set('provider', r.provider)
+                      if (r.model) params.set('model', r.model)
+                      const qs = params.toString()
+                      navigate(`/review/${r.owner}/${r.repo}/${r.pull_number}${qs ? '?' + qs : ''}`)
+                    }}
                     className="bg-gray-800 rounded p-3 cursor-pointer hover:bg-gray-750 transition-colors"
                   >
                     <div className="text-white text-sm font-medium truncate">
