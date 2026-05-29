@@ -14,6 +14,14 @@ class BaseLLMProvider(ABC):
     @abstractmethod
     def name(self) -> str: ...
 
+    @property
+    def default_model(self) -> str:
+        return getattr(self, "_default_model", "")
+
+    @property
+    def has_api_key(self) -> bool:
+        return True
+
     @abstractmethod
     async def review(
         self, prompt: ReviewPrompt, *, model: str | None = None
@@ -21,3 +29,6 @@ class BaseLLMProvider(ABC):
 
     @abstractmethod
     async def health_check(self) -> bool: ...
+
+    async def list_models(self) -> list[str]:
+        return [self.default_model] if self.default_model else []

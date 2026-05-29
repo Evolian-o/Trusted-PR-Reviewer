@@ -1,84 +1,16 @@
 import os
-import json
-import asyncio
-import aiohttp
-from collections.abc import AsyncIterator
-from .base import BaseLLMProvider, ReviewPrompt
+from .openai_compatible import OpenAICompatibleProvider
 
 DEEPSEEK_API_URL = "https://api.deepseek.com/v1"
 
 
-class DeepSeekProvider(BaseLLMProvider):
-    def __init__(self, default_model: str = "deepseek-chat"):
-        self._default_model = default_model
-        self._api_key = os.environ.get("DEEPSEEK_API_KEY", "")
-
-    @property
-    def name(self) -> str:
-        return "deepseek"
-
-    async def review(
-        self, prompt: ReviewPrompt, *, model: str | None = None
-    ) -> AsyncIterator[str]:
-        if not self._api_key:
-            raise RuntimeError("未配置 DEEPSEEK_API_KEY 环境变量")
-
-        payload = {
-            "model": model or self._default_model,
-            "messages": [
-                {"role": "system", "content": prompt.system},
-                {"role": "user", "content": prompt.user},
-            ],
-            "stream": True,
-        }
-        headers = {
-            "Authorization": f"Bearer {self._api_key}",
-            "Content-Type": "application/json",
-        }
-        timeout = aiohttp.ClientTimeout(total=300, sock_read=300)
-        try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.post(
-                    f"{DEEPSEEK_API_URL}/chat/completions",
-                    json=payload,
-                    headers=headers,
-                ) as resp:
-                    resp.raise_for_status()
-                    async for line in resp.content:
-                        line = line.decode("utf-8").strip()
-                        if not line or not line.startswith("data:"):
-                            continue
-                        data_str = line[5:].strip()
-                        if data_str == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(data_str)
-                            choices = chunk.get("choices", [])
-                            if choices:
-                                delta = choices[0].get("delta", {})
-                                if "content" in delta:
-                                    yield delta["content"]
-                        except json.JSONDecodeError:
-                            continue
-        except asyncio.TimeoutError:
-            raise RuntimeError("DeepSeek API 超时（300秒），请稍后重试") from None
-        except aiohttp.ClientError as e:
-            msg = str(e).strip() or f"{type(e).__name__}(无详细错误信息)"
-            raise RuntimeError(f"DeepSeek 网络错误: {msg}") from e
-        except Exception as e:
-            msg = str(e).strip() or f"{type(e).__name__}(无详细错误信息)"
-            raise RuntimeError(f"DeepSeek 调用异常: {msg}") from e
-
-    async def health_check(self) -> bool:
-        if not self._api_key:
-            return False
-        try:
-            headers = {"Authorization": f"Bearer {self._api_key}"}
-            timeout = aiohttp.ClientTimeout(total=10)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(
-                    f"{DEEPSEEK_API_URL}/models", headers=headers
-                ) as resp:
-                    return resp.status == 200
-        except aiohttp.ClientError:
-            return False
+class DeepSeekProvider(OpenAICompatibleProvider):
+    def __init__(self):
+        super().__init__(
+            name="deepseek",
+            base_url=DEEPSEEK_API_URL,
+            api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
+            default_model="deepseek-chat",
+            timeout=300,
+            is_builtin=True,
+        )
