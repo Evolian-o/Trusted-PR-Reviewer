@@ -11,6 +11,7 @@ from services.prompt_builder import SYSTEM_PROMPT, build_user_prompt
 from services.llm_providers.base import ReviewPrompt
 from services.llm_providers.factory import get_provider, list_providers
 from services.result_formatter import parse_llm_output, build_review_result
+from services.database import save_review, list_reviews, get_review, delete_review
 from models.review import FileReview
 
 app = FastAPI(title="Trusted PR Reviewer")
@@ -116,6 +117,12 @@ async def event_stream(pr_url: str, provider_name: str, model: str | None):
             "data": result.model_dump_json(),
         }
 
+        # 持久化保存
+        try:
+            review_id = await save_review(pr_url, provider_name, model, result)
+        except Exception:
+            pass  # 保存失败不影响评审响应
+
     except ValueError as e:
         yield {"event": "review_error", "data": str(e)}
     except RuntimeError as e:
@@ -131,3 +138,25 @@ async def review(
     model: str | None = Query(None, description="模型名称"),
 ):
     return EventSourceResponse(event_stream(url, provider, model))
+
+
+@app.get("/api/history")
+async def history(owner: str | None = None, repo: str | None = None):
+    rows = await list_reviews(owner=owner, repo=repo)
+    return {"reviews": rows}
+
+
+@app.get("/api/history/{review_id}")
+async def history_detail(review_id: int):
+    row = await get_review(review_id)
+    if not row:
+        return {"error": "记录不存在"}, 404
+    return row
+
+
+@app.delete("/api/history/{review_id}")
+async def history_delete(review_id: int):
+    deleted = await delete_review(review_id)
+    if not deleted:
+        return {"error": "记录不存在"}, 404
+    return {"status": "ok"}

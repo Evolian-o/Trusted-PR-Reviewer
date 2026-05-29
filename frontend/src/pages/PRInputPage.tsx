@@ -64,6 +64,16 @@ export default function PRInputPage() {
           >
             开始评审
           </button>
+
+          <div className="text-center">
+            <a
+              href="/history"
+              onClick={(e) => { e.preventDefault(); navigate('/history') }}
+              className="text-gray-500 hover:text-gray-300 text-sm transition-colors"
+            >
+              评审历史
+            </a>
+          </div>
         </div>
       </div>
     </div>
