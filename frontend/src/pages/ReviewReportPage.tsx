@@ -21,7 +21,7 @@ export default function ReviewReportPage() {
   const streamingRef = useRef<HTMLDivElement>(null)
 
   const prUrl = `https://github.com/${owner}/${repo}/pull/${pr}`
-  const provider = searchParams.get('provider') || 'ollama'
+  const provider = searchParams.get('provider') || 'deepseek'
   const model = searchParams.get('model')
 
   useEffect(() => {
