@@ -384,6 +384,10 @@ async def settings_get():
         "poll_interval_seconds": kv.get("poll_interval_seconds", "300"),
         "default_provider": kv.get("default_provider", "ollama"),
         "default_model": kv.get("default_model", ""),
+        "chunk_max_chars": kv.get("chunk_max_chars", "8000"),
+        "chunk_merge_max_chars": kv.get("chunk_merge_max_chars", "6000"),
+        "chunk_max_lines": kv.get("chunk_max_lines", "2000"),
+        "chunk_strategy": kv.get("chunk_strategy", "auto"),
         "email": {
             "smtp_host": email.get("smtp_host", "") if email else "",
             "smtp_port": email.get("smtp_port", 465) if email else 465,
@@ -402,7 +406,10 @@ async def settings_update(data: dict):
         return {"error": "未认证"}, 401
 
     # 保存通用设置
-    for key in ("poll_interval_seconds", "default_provider", "default_model"):
+    for key in (
+        "poll_interval_seconds", "default_provider", "default_model",
+        "chunk_max_chars", "chunk_merge_max_chars", "chunk_max_lines", "chunk_strategy",
+    ):
         if key in data:
             await set_setting(user_id, key, str(data[key]))
 
