@@ -1,8 +1,14 @@
 import logging
+import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 import aiosmtplib
+
+# Windows 下 SMTP over SSL 需要跳过证书验证
+_SSL_CTX = ssl.create_default_context()
+_SSL_CTX.check_hostname = False
+_SSL_CTX.verify_mode = ssl.CERT_NONE
 
 from services.database import get_email_config
 from services.auth import get_user_id
@@ -105,6 +111,7 @@ async def send_review_notification(
             hostname=host, port=port,
             username=sender, password=config.get("password", ""),
             use_tls=port == 465, start_tls=port == 587,
+            tls_context=_SSL_CTX,
         )
         logger.info(f"邮件已发送: {owner}/{repo} → {to_email}")
     except Exception as e:
@@ -128,4 +135,5 @@ async def send_test_email(config: dict) -> None:
         hostname=host, port=port,
         username=sender, password=config.get("password", ""),
         use_tls=port == 465, start_tls=port == 587,
+        tls_context=_SSL_CTX,
     )
