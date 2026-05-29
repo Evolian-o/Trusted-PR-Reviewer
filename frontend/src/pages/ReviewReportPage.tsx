@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
-import { streamReview } from '../services/api'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
+import { streamReview, fetchCachedReview } from '../services/api'
 import type { ReviewPhase, ReviewProgress, ReviewResult, FileInfo, ModelInfo } from '../types/review'
 import PRInfoBar from '../components/PRInfoBar'
 import ProgressIndicator from '../components/ProgressIndicator'
@@ -12,6 +12,7 @@ import ExportToolbar from '../components/ExportToolbar'
 export default function ReviewReportPage() {
   const { owner, repo, pr } = useParams()
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
 
   const [phase, setPhase] = useState<ReviewPhase>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -27,8 +28,31 @@ export default function ReviewReportPage() {
   const prUrl = `https://github.com/${owner}/${repo}/pull/${pr}`
   const provider = searchParams.get('provider') || 'deepseek'
   const model = searchParams.get('model')
+  const reviewId = searchParams.get('reviewId')
+  const [fromCache, setFromCache] = useState(false)
+
+  // 从缓存加载已有评审
+  const loadCachedReview = useCallback(async (id: number) => {
+    setPhase('loading')
+    setStatusMsg('正在加载历史评审...')
+    try {
+      const cached = await fetchCachedReview(id)
+      setResult(cached)
+      if (provider) setModelInfo({ provider, model: model || provider })
+      setFromCache(true)
+      setPhase('done')
+    } catch (err: any) {
+      setError(err.message || '加载历史评审失败')
+      setPhase('error')
+    }
+  }, [provider, model])
 
   useEffect(() => {
+    if (reviewId) {
+      loadCachedReview(parseInt(reviewId))
+      return
+    }
+
     setPhase('loading')
 
     const close = streamReview(
@@ -68,7 +92,7 @@ export default function ReviewReportPage() {
     )
 
     return close
-  }, [prUrl, provider, model])
+  }, [prUrl, provider, model, reviewId, loadCachedReview])
 
   // 将 allPatches 转为数组（按收集顺序）
   const patchList = useMemo(() => Array.from(allPatches.values()), [allPatches])
@@ -87,15 +111,36 @@ export default function ReviewReportPage() {
                 评审模型: <span className="text-blue-400">{modelInfo.provider} / {modelInfo.model}</span>
               </p>
             )}
+            {fromCache && (
+              <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
+                <span className="inline-block w-1.5 h-1.5 bg-gray-500 rounded-full" />
+                来自缓存 · 无需消耗 Token
+              </p>
+            )}
           </div>
-          <a
-            href={prUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm text-blue-400 hover:text-blue-300"
-          >
-            在 GitHub 查看 &rarr;
-          </a>
+          <div className="flex items-center gap-3">
+            {fromCache && (
+              <button
+                onClick={() => {
+                  const params = new URLSearchParams()
+                  if (provider) params.set('provider', provider)
+                  if (model) params.set('model', model || '')
+                  window.location.href = `/review/${owner}/${repo}/${pr}?${params.toString()}`
+                }}
+                className="text-sm text-yellow-400 hover:text-yellow-300 px-3 py-1 border border-yellow-600 rounded transition-colors"
+              >
+                重新评审
+              </button>
+            )}
+            <a
+              href={prUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-blue-400 hover:text-blue-300"
+            >
+              在 GitHub 查看 &rarr;
+            </a>
+          </div>
         </div>
 
         {/* Loading */}
@@ -189,6 +234,11 @@ export default function ReviewReportPage() {
                     ({result.file_reviews.length} 个文件)
                   </span>
                 </h2>
+                {fromCache && (
+                  <p className="text-xs text-gray-500 bg-gray-800 border border-gray-700 rounded px-3 py-2">
+                    缓存数据不含 diff 补丁，仅展示评审结果。如需查看完整 diff，请点击「重新评审」。
+                  </p>
+                )}
 
                 {result.file_reviews.map((fr) => {
                   const patch = allPatches.get(fr.file)

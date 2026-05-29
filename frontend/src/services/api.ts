@@ -53,6 +53,13 @@ export async function testProviderConnection(name: string, data?: CustomProvider
   return resp.json()
 }
 
+export async function fetchCachedReview(reviewId: number): Promise<ReviewResult> {
+  const resp = await fetch(`/api/history/${reviewId}`)
+  const data = await resp.json()
+  if (data.error) throw new Error(data.error)
+  return JSON.parse(data.result_json) as ReviewResult
+}
+
 export function streamReview(
   prUrl: string,
   provider: string,

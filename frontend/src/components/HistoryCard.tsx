@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom'
 import type { ReviewResult } from '../types/review'
 
 interface Props {
@@ -36,6 +37,7 @@ const RISK_LABELS: Record<string, string> = {
 }
 
 export default function HistoryCard({ review, expanded, onToggle, onDelete }: Props) {
+  const navigate = useNavigate()
   let result: ReviewResult | null = null
   if (review.result_json) {
     try {
@@ -120,12 +122,27 @@ export default function HistoryCard({ review, expanded, onToggle, onDelete }: Pr
             </div>
           )}
 
-          <button
-            onClick={(e) => { e.stopPropagation(); onDelete() }}
-            className="mt-2 px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded transition-colors"
-          >
-            删除记录
-          </button>
+          <div className="flex gap-2 mt-2">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                const params = new URLSearchParams()
+                if (review.provider) params.set('provider', review.provider)
+                if (review.model) params.set('model', review.model)
+                params.set('reviewId', String(review.id))
+                navigate(`/review/${review.owner}/${review.repo}/${review.pull_number}?${params.toString()}`)
+              }}
+              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors"
+            >
+              查看完整报告
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onDelete() }}
+              className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded transition-colors"
+            >
+              删除记录
+            </button>
+          </div>
         </div>
       )}
     </div>

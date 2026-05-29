@@ -297,8 +297,8 @@ export default function DashboardPage() {
                       const params = new URLSearchParams()
                       if (r.provider) params.set('provider', r.provider)
                       if (r.model) params.set('model', r.model)
-                      const qs = params.toString()
-                      navigate(`/review/${r.owner}/${r.repo}/${r.pull_number}${qs ? '?' + qs : ''}`)
+                      params.set('reviewId', String(r.id))
+                      navigate(`/review/${r.owner}/${r.repo}/${r.pull_number}?${params.toString()}`)
                     }}
                     className="bg-gray-800 rounded p-3 cursor-pointer hover:bg-gray-750 transition-colors"
                   >
