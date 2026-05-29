@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { formatLocalTime } from '../utils/time'
 
 interface Repo {
   id: number
@@ -315,7 +316,7 @@ export default function DashboardPage() {
                         {r.risk_level === 'high' ? '高' : r.risk_level === 'medium' ? '中' : '低'}
                       </span>
                       <span className="text-gray-500 text-xs">{r.issue_count} 问题</span>
-                      <span className="text-gray-600 text-xs">{r.created_at?.replace('T', ' ')}</span>
+                      <span className="text-gray-600 text-xs">{formatLocalTime(r.created_at)}</span>
                     </div>
                   </div>
                 ))}

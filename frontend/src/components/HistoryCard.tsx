@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import type { ReviewResult } from '../types/review'
+import { formatLocalTime } from '../utils/time'
 
 interface Props {
   review: {
@@ -52,7 +53,7 @@ export default function HistoryCard({ review, expanded, onToggle, onDelete }: Pr
         onClick={onToggle}
       >
         <span className="text-gray-400 text-sm flex-shrink-0">
-          {review.created_at.replace('T', ' ')}
+          {formatLocalTime(review.created_at)}
         </span>
         <span className="text-white font-medium truncate flex-1">
           {review.pr_title}
@@ -76,50 +77,8 @@ export default function HistoryCard({ review, expanded, onToggle, onDelete }: Pr
 
       {expanded && result && (
         <div className="px-4 pb-4 border-t border-gray-700">
-          <div className="mt-3 flex items-center gap-4 text-sm text-gray-400 mb-3">
-            <span>文件 {result.files_changed}</span>
-            <span className="text-green-400">+{result.additions}</span>
-            <span className="text-red-400">-{result.deletions}</span>
-          </div>
-
           {result.summary && (
-            <p className="text-gray-300 text-sm mb-3 whitespace-pre-wrap">{result.summary}</p>
-          )}
-
-          {result.issues.length > 0 && (
-            <div className="mb-3">
-              <h4 className="text-sm font-medium text-red-400 mb-2">
-                问题 ({result.issues.length})
-              </h4>
-              <div className="space-y-2">
-                {result.issues.map((issue, i) => (
-                  <div key={i} className="bg-gray-900 rounded p-2 text-sm">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-red-300 font-medium">{issue.severity}</span>
-                      <span className="text-gray-500">[{issue.category}]</span>
-                      <span className="text-blue-400">{issue.file}{issue.line ? `:${issue.line}` : ''}</span>
-                    </div>
-                    <p className="text-gray-300">{issue.description}</p>
-                    {issue.suggestion && (
-                      <p className="text-blue-400 mt-1">建议: {issue.suggestion}</p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {result.suggestions.length > 0 && (
-            <div className="mb-3">
-              <h4 className="text-sm font-medium text-blue-400 mb-2">
-                建议 ({result.suggestions.length})
-              </h4>
-              <ul className="list-disc list-inside text-sm text-gray-300 space-y-1">
-                {result.suggestions.map((s, i) => (
-                  <li key={i}>{s}</li>
-                ))}
-              </ul>
-            </div>
+            <p className="text-gray-300 text-sm mt-3 mb-3 whitespace-pre-wrap line-clamp-3">{result.summary}</p>
           )}
 
           <div className="flex gap-2 mt-2">
