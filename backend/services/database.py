@@ -23,7 +23,7 @@ async def init_db():
                 issue_count     INTEGER DEFAULT 0,
                 suggestion_count INTEGER DEFAULT 0,
                 result_json     TEXT NOT NULL,
-                created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at      TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
             )
         """)
         await db.execute(
@@ -85,7 +85,7 @@ async def init_db():
                 default_model   TEXT NOT NULL,
                 timeout         INTEGER DEFAULT 120,
                 is_enabled      INTEGER DEFAULT 1,
-                created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+                created_at      TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
                 updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
                 UNIQUE(user_id, name)
             )
