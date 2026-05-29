@@ -99,7 +99,7 @@ async def repo_list():
     token = get_token()
     if not token:
         return {"error": "未认证"}, 401
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(verify=False) as client:
         resp = await client.get(
             "https://api.github.com/user/repos",
             params={"sort": "updated", "per_page": 100, "type": "all"},
@@ -159,6 +159,65 @@ async def monitor_delete(repo_id: int):
     return {"status": "ok"}
 
 
+@app.get("/api/repos/{owner}/{repo}/pulls")
+async def repo_pulls(owner: str, repo: str, state: str = "open"):
+    token = get_token()
+    if not token:
+        return {"error": "未认证"}, 401
+    async with httpx.AsyncClient(verify=False) as client:
+        resp = await client.get(
+            f"https://api.github.com/repos/{owner}/{repo}/pulls",
+            params={"state": state, "per_page": 30},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+        data = resp.json()
+        if not isinstance(data, list):
+            return {"error": data.get("message", "获取 PR 失败")}, resp.status_code
+        return {
+            "pulls": [
+                {
+                    "number": p["number"],
+                    "title": p["title"],
+                    "state": p["state"],
+                    "html_url": p["html_url"],
+                    "user": p["user"]["login"],
+                    "created_at": p["created_at"],
+                    "updated_at": p["updated_at"],
+                    "head_sha": p["head"]["sha"],
+                }
+                for p in data
+            ]
+        }
+
+
+@app.post("/api/repos/{owner}/{repo}/pulls")
+async def repo_create_pr(owner: str, repo: str, data: dict):
+    token = get_token()
+    if not token:
+        return {"error": "未认证"}, 401
+    title = data.get("title", "")
+    head = data.get("head", "")
+    base = data.get("base", "main")
+    if not title or not head:
+        return {"error": "缺少 title 或 head"}, 400
+    async with httpx.AsyncClient(verify=False) as client:
+        resp = await client.post(
+            f"https://api.github.com/repos/{owner}/{repo}/pulls",
+            json={"title": title, "head": head, "base": base},
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+        pr = resp.json()
+        if resp.status_code >= 400:
+            return {"error": pr.get("message", "创建 PR 失败")}, resp.status_code
+        return {"number": pr["number"], "html_url": pr["html_url"], "title": pr["title"]}
+
+
 @app.get("/api/providers")
 async def providers():
     names = list_providers()
@@ -210,18 +269,26 @@ async def event_stream(pr_url: str, provider_name: str, model: str | None):
             prompt = ReviewPrompt(system=SYSTEM_PROMPT, user=user_prompt)
 
             full_text = ""
-            async for token in provider.review(prompt, model=model):
-                full_text += token
-                yield {"event": "token", "data": token}
-                await asyncio.sleep(0)
+            try:
+                async for token in provider.review(prompt, model=model):
+                    full_text += token
+                    yield {"event": "token", "data": token}
+                    await asyncio.sleep(0)
+            except Exception as e:
+                yield {"event": "review_error", "data": f"LLM 调用失败 [{fc.filename}]: {e}"}
+                continue
 
-            summary, issues, suggestions = parse_llm_output(full_text, fc.filename)
-            file_reviews.append(FileReview(
-                file=fc.filename,
-                summary=summary,
-                issues=issues,
-                suggestions=suggestions,
-            ))
+            try:
+                summary, issues, suggestions = parse_llm_output(full_text, fc.filename)
+                file_reviews.append(FileReview(
+                    file=fc.filename,
+                    summary=summary,
+                    issues=issues,
+                    suggestions=suggestions,
+                ))
+            except Exception as e:
+                yield {"event": "review_error", "data": f"解析评审结果失败 [{fc.filename}]: {e}"}
+                continue
 
             yield {
                 "event": "file_done",

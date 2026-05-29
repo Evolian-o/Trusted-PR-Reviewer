@@ -32,20 +32,24 @@ async def auto_review_pr(owner: str, repo: str, pull_number: int, pr_info: dict)
 
         file_reviews = []
         for fc in chunks:
-            user_prompt = build_user_prompt(pr, fc)
-            prompt = ReviewPrompt(system=SYSTEM_PROMPT, user=user_prompt)
+            try:
+                user_prompt = build_user_prompt(pr, fc)
+                prompt = ReviewPrompt(system=SYSTEM_PROMPT, user=user_prompt)
 
-            full_text = ""
-            async for token in provider.review(prompt, model=model):
-                full_text += token
+                full_text = ""
+                async for token in provider.review(prompt, model=model):
+                    full_text += token
 
-            summary, issues, suggestions = parse_llm_output(full_text, fc.filename)
-            file_reviews.append(FileReview(
-                file=fc.filename,
-                summary=summary,
-                issues=issues,
-                suggestions=suggestions,
-            ))
+                summary, issues, suggestions = parse_llm_output(full_text, fc.filename)
+                file_reviews.append(FileReview(
+                    file=fc.filename,
+                    summary=summary,
+                    issues=issues,
+                    suggestions=suggestions,
+                ))
+            except Exception as e:
+                logger.error(f"评审文件失败 {fc.filename}: {e}")
+                continue
 
         result = build_review_result(
             pr_title=pr.title,

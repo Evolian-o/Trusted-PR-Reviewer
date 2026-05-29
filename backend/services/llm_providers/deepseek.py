@@ -60,7 +60,9 @@ class DeepSeekProvider(BaseLLMProvider):
                         except json.JSONDecodeError:
                             continue
         except aiohttp.ClientError as e:
-            raise RuntimeError(f"DeepSeek API 请求失败: {e}") from e
+            raise RuntimeError(f"DeepSeek 网络错误: {e}") from e
+        except Exception as e:
+            raise RuntimeError(f"DeepSeek 调用异常: {type(e).__name__}: {e}") from e
 
     async def health_check(self) -> bool:
         if not self._api_key:

@@ -27,7 +27,7 @@ class OllamaProvider(BaseLLMProvider):
             ],
             "stream": True,
         }
-        timeout = aiohttp.ClientTimeout(total=120)
+        timeout = aiohttp.ClientTimeout(total=600)  # 10 分钟，首次请求需要模型加载时间
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(f"{OLLAMA_API}/chat", json=payload) as resp:
@@ -38,12 +38,16 @@ class OllamaProvider(BaseLLMProvider):
                             continue
                         try:
                             chunk = json.loads(line)
-                            if "message" in chunk and "content" in chunk["message"]:
-                                yield chunk["message"]["content"]
+                            if "message" in chunk:
+                                token = chunk["message"].get("content", "")
+                                if token:  # 跳过空 token，避免输出污染
+                                    yield token
                         except json.JSONDecodeError:
                             continue
         except aiohttp.ClientError as e:
-            raise RuntimeError(f"Ollama 请求失败: {e}") from e
+            raise RuntimeError(f"Ollama 网络错误: {e}") from e
+        except Exception as e:
+            raise RuntimeError(f"Ollama 调用异常: {type(e).__name__}: {e}") from e
 
     async def health_check(self) -> bool:
         try:

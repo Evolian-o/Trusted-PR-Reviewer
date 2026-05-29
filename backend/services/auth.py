@@ -55,7 +55,7 @@ def get_login_url() -> str:
 
 
 async def exchange_code(code: str) -> str:
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(verify=False) as client:
         resp = await client.post(
             "https://github.com/login/oauth/access_token",
             json={
@@ -73,7 +73,7 @@ async def exchange_code(code: str) -> str:
 
 
 async def fetch_github_user(token: str) -> dict:
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(verify=False) as client:
         resp = await client.get(
             "https://api.github.com/user",
             headers={

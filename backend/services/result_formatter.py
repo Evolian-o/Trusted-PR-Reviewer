@@ -18,28 +18,82 @@ def _sanitize_category(raw: str) -> str:
     return raw if raw in VALID_CATEGORIES else "style"
 
 
-def parse_llm_output(text: str, filename: str) -> tuple[str, list[Issue], list[str]]:
-    """从 LLM 原始输出中提取 summary / issues / suggestions"""
-    # 尝试 JSON 解析
-    data = None
-    # 先找 ```json ... ``` 代码块
-    m = re.search(r"```(?:json)?\s*([\s\S]*?)```", text, re.IGNORECASE)
+def _extract_json_from_text(text: str) -> dict | None:
+    """从文本中提取 JSON 对象（处理 LLM 输出不规范的情况）"""
+    cleaned = text.strip()
+
+    # 1. 尝试 ```json ... ``` 代码块
+    m = re.search(r"```(?:json)?\s*([\s\S]*?)```", cleaned, re.IGNORECASE)
     if m:
         try:
-            data = json.loads(m.group(1))
+            return json.loads(m.group(1).strip())
         except json.JSONDecodeError:
             pass
 
-    # 再尝试直接整个文本解析
-    if data is None:
-        try:
-            data = json.loads(text.strip())
-        except json.JSONDecodeError:
-            pass
+    # 2. 尝试直接解析全文
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+
+    # 3. 用大括号匹配提取第一个完整 JSON 对象
+    #    处理 LLM 在 JSON 前后加"思考"文本的情况
+    start = cleaned.find("{")
+    if start != -1:
+        depth = 0
+        in_string = False
+        escape = False
+        for i in range(start, len(cleaned)):
+            ch = cleaned[i]
+            if escape:
+                escape = False
+                continue
+            if ch == "\\":
+                escape = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    candidate = cleaned[start:i + 1]
+                    try:
+                        return json.loads(candidate)
+                    except json.JSONDecodeError:
+                        break  # 括号匹配但 JSON 不合法，放弃
+    return None
+
+
+def _extract_suggestions_from_text(text: str) -> list[str]:
+    """从非 JSON 文本中尝试提取建议"""
+    suggestions = []
+    for line in text.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        # 匹配编号列表：1. xxx / - xxx / * xxx
+        m = re.match(r"^(?:\d+[\.\)]\s*|[-*]\s+)(.+)$", line)
+        if m:
+            suggestions.append(m.group(1).strip())
+    return suggestions[:5]  # 最多 5 条
+
+
+def parse_llm_output(text: str, filename: str) -> tuple[str, list[Issue], list[str]]:
+    """从 LLM 原始输出中提取 summary / issues / suggestions"""
+    if not text or not text.strip():
+        return ("LLM 返回为空", [], [])
+
+    data = _extract_json_from_text(text)
 
     if data is None:
-        # fallback：把全文当 summary
-        return (text[:200], [], [])
+        # 完全无法解析 JSON，尝试从文本中提取有用信息
+        suggestions = _extract_suggestions_from_text(text)
+        return (text[:300].strip(), [], suggestions)
 
     summary = data.get("summary", "") or ""
     raw_issues = data.get("issues", []) or []
