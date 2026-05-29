@@ -10,10 +10,6 @@ interface Settings {
   chunk_max_lines: string
   chunk_strategy: string
   email: {
-    smtp_host: string
-    smtp_port: number
-    username: string
-    password: string
     to_email: string
     enabled: boolean
   }
@@ -41,10 +37,6 @@ export default function SettingsPage() {
     chunk_max_lines: '2000',
     chunk_strategy: 'auto',
     email: {
-      smtp_host: '',
-      smtp_port: 465,
-      username: '',
-      password: '',
       to_email: '',
       enabled: false,
     },
@@ -268,59 +260,18 @@ export default function SettingsPage() {
               <span className="text-gray-300 text-sm">启用邮件通知</span>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-gray-400 text-xs block mb-1">SMTP 主机</label>
-                <input
-                  type="text"
-                  value={settings.email.smtp_host}
-                  onChange={(e) => update('email.smtp_host', e.target.value)}
-                  placeholder="smtp.qq.com"
-                  className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="text-gray-400 text-xs block mb-1">端口</label>
-                <input
-                  type="number"
-                  value={settings.email.smtp_port}
-                  onChange={(e) => update('email.smtp_port', Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            </div>
-
             <div>
-              <label className="text-gray-400 text-xs block mb-1">发件账号</label>
-              <input
-                type="text"
-                value={settings.email.username}
-                onChange={(e) => update('email.username', e.target.value)}
-                placeholder="your@qq.com"
-                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="text-gray-400 text-xs block mb-1">SMTP 授权码</label>
-              <input
-                type="password"
-                value={settings.email.password}
-                onChange={(e) => update('email.password', e.target.value)}
-                placeholder="SMTP 授权码"
-                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="text-gray-400 text-xs block mb-1">收件邮箱</label>
+              <label className="text-gray-400 text-sm block mb-1">收件邮箱</label>
               <input
                 type="email"
                 value={settings.email.to_email}
                 onChange={(e) => update('email.to_email', e.target.value)}
-                placeholder="接收通知的邮箱"
+                placeholder="your@email.com"
                 className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+              <p className="text-gray-500 text-xs mt-1">
+                通过 Resend 发送，无需配置 SMTP
+              </p>
             </div>
 
             <div className="flex items-center gap-3">

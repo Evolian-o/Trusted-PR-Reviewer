@@ -389,10 +389,6 @@ async def settings_get():
         "chunk_max_lines": kv.get("chunk_max_lines", "2000"),
         "chunk_strategy": kv.get("chunk_strategy", "auto"),
         "email": {
-            "smtp_host": email.get("smtp_host", "") if email else "",
-            "smtp_port": email.get("smtp_port", 465) if email else 465,
-            "username": email.get("username", "") if email else "",
-            "password": email.get("password", "") if email else "",
             "to_email": email.get("to_email", "") if email else "",
             "enabled": bool(email.get("enabled")) if email else False,
         },

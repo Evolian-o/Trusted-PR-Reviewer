@@ -45,16 +45,22 @@ async def init_db():
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_monitor_user_repo ON monitored_repos(user_id, owner, repo)"
         )
 
+        # 迁移旧表（SMTP 字段 → 简化 Resend 模式）
+        cursor = await db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='email_config'"
+        )
+        if await cursor.fetchone():
+            cols = await db.execute("PRAGMA table_info(email_config)")
+            col_names = [row[1] for row in await cols.fetchall()]
+            if "smtp_host" in col_names:
+                await db.execute("DROP TABLE email_config")
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS email_config (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id     INTEGER NOT NULL UNIQUE,
-                smtp_host   TEXT NOT NULL,
-                smtp_port   INTEGER NOT NULL,
-                username    TEXT NOT NULL,
-                password    TEXT NOT NULL,
-                to_email    TEXT NOT NULL,
-                enabled     INTEGER DEFAULT 0
+                id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id  INTEGER NOT NULL UNIQUE,
+                to_email TEXT NOT NULL,
+                enabled  INTEGER DEFAULT 0
             )
         """)
 
@@ -230,12 +236,11 @@ async def save_email_config(user_id: int, config: dict) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """INSERT OR REPLACE INTO email_config
-               (user_id, smtp_host, smtp_port, username, password, to_email, enabled)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               (user_id, to_email, enabled)
+               VALUES (?, ?, ?)""",
             (
-                user_id, config["smtp_host"], config["smtp_port"],
-                config["username"], config["password"],
-                config["to_email"], 1 if config.get("enabled") else 0,
+                user_id, config["to_email"],
+                1 if config.get("enabled") else 0,
             ),
         )
         await db.commit()
