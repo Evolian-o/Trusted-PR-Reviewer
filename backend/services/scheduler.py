@@ -88,7 +88,7 @@ async def auto_review_pr(owner: str, repo: str, pull_number: int, pr_info: dict)
 
 
 async def _get_default_provider():
-    provider_name = await get_setting(_user_id or 0, "default_provider", "ollama")
+    provider_name = await get_setting(_user_id or 0, "default_provider", "deepseek")
     return get_provider(provider_name)
 
 

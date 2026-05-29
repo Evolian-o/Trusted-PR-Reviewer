@@ -31,7 +31,7 @@ export default function SettingsPage() {
   const [testResult, setTestResult] = useState<string | null>(null)
   const [settings, setSettings] = useState<Settings>({
     poll_interval_seconds: '300',
-    default_provider: 'ollama',
+    default_provider: 'deepseek',
     default_model: '',
     chunk_max_chars: '8000',
     chunk_merge_max_chars: '6000',

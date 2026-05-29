@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import UrlInput from '../components/UrlInput'
 import ModelSelector from '../components/ModelSelector'
@@ -9,10 +9,22 @@ const URL_PATTERN = /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/
 export default function PRInputPage() {
   const [url, setUrl] = useState('')
   const [urlError, setUrlError] = useState('')
-  const [provider, setProvider] = useState('ollama')
-  const [model, setModel] = useState('qwen3.5:latest')
+  const [provider, setProvider] = useState('deepseek')
+  const [model, setModel] = useState('deepseek-chat')
   const [dims, setDims] = useState(['bug', 'security', 'performance', 'style'])
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
   const navigate = useNavigate()
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.default_provider) setProvider(data.default_provider)
+        if (data.default_model) setModel(data.default_model)
+      })
+      .catch(() => {})
+      .finally(() => setSettingsLoaded(true))
+  }, [])
 
   const handleUrlChange = (v: string) => {
     setUrl(v)

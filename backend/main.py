@@ -343,7 +343,7 @@ async def event_stream(pr_url: str, provider_name: str, model: str | None):
 @app.get("/api/review")
 async def review(
     url: str = Query(..., description="GitHub PR URL"),
-    provider: str = Query("ollama", description="LLM Provider"),
+    provider: str = Query("deepseek", description="LLM Provider"),
     model: str | None = Query(None, description="模型名称"),
 ):
     return EventSourceResponse(event_stream(url, provider, model))
@@ -382,7 +382,7 @@ async def settings_get():
     email = await get_email_config(user_id)
     return {
         "poll_interval_seconds": kv.get("poll_interval_seconds", "300"),
-        "default_provider": kv.get("default_provider", "ollama"),
+        "default_provider": kv.get("default_provider", "deepseek"),
         "default_model": kv.get("default_model", ""),
         "chunk_max_chars": kv.get("chunk_max_chars", "8000"),
         "chunk_merge_max_chars": kv.get("chunk_merge_max_chars", "6000"),
