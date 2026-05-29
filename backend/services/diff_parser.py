@@ -42,8 +42,8 @@ def split_large_file(fc: FileChange) -> list[FileChange]:
     return chunks
 
 
-def chunk_pr(pr: PRInfo) -> list[FileChange]:
-    """将 PR 按文件拆分为评审用的 Chunk 列表"""
+def chunk_pr_simple(pr: PRInfo) -> list[FileChange]:
+    """将 PR 按文件拆分为评审用的 Chunk 列表（行级分片，向后兼容）"""
     chunks = []
     for fc in pr.files:
         if fc.status == "removed":

@@ -46,9 +46,15 @@ def build_user_prompt(pr: PRInfo, fc: FileChange) -> str:
         f"文件名: {fc.filename}",
         f"状态: {fc.status}",
         f"语言: {fc.language}",
+    ]
+
+    if fc.context_hint:
+        parts.append(f"分片上下文: {fc.context_hint}")
+
+    parts += [
         f"",
-        f"## Diff",
-        f"```diff",
+        f"## 变更内容 (完整函数/方法/类上下文)",
+        f"```{fc.language.lower() if fc.language else ''}",
         f"{diff}",
         f"```",
     ]
