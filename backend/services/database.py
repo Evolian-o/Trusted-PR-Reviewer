@@ -126,35 +126,37 @@ async def save_review(pr_url: str, provider: str, model: str | None, result) -> 
         return cursor.lastrowid
 
 
-async def list_reviews(owner: str | None = None, repo: str | None = None) -> list[dict]:
+async def list_reviews(
+    keyword: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
+) -> list[dict]:
     await init_db()
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        if owner and repo:
-            cursor = await db.execute(
-                """SELECT id, owner, repo, pull_number, pr_title, pr_url,
-                   provider, model, files_changed, additions, deletions,
-                   risk_level, issue_count, suggestion_count, result_json, created_at
-                FROM reviews WHERE owner=? AND repo=?
-                ORDER BY created_at DESC""",
-                (owner, repo),
-            )
-        elif owner:
-            cursor = await db.execute(
-                """SELECT id, owner, repo, pull_number, pr_title, pr_url,
-                   provider, model, files_changed, additions, deletions,
-                   risk_level, issue_count, suggestion_count, result_json, created_at
-                FROM reviews WHERE owner=?
-                ORDER BY created_at DESC""",
-                (owner,),
-            )
+        BASE_SQL = """SELECT id, owner, repo, pull_number, pr_title, pr_url,
+               provider, model, files_changed, additions, deletions,
+               risk_level, issue_count, suggestion_count, result_json, created_at
+            FROM reviews"""
+
+        conditions: list[str] = []
+        params: list[str] = []
+
+        if keyword:
+            conditions.append("(owner LIKE ? OR repo LIKE ? OR pr_title LIKE ?)")
+            params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
+        if from_date:
+            conditions.append("created_at >= ?")
+            params.append(from_date)
+        if to_date:
+            conditions.append("created_at <= ?")
+            params.append(to_date + " 23:59:59")
+
+        if conditions:
+            sql = f"{BASE_SQL} WHERE {' AND '.join(conditions)} ORDER BY created_at DESC"
+            cursor = await db.execute(sql, tuple(params))
         else:
-            cursor = await db.execute(
-                """SELECT id, owner, repo, pull_number, pr_title, pr_url,
-                   provider, model, files_changed, additions, deletions,
-                   risk_level, issue_count, suggestion_count, result_json, created_at
-                FROM reviews ORDER BY created_at DESC"""
-            )
+            cursor = await db.execute(f"{BASE_SQL} ORDER BY created_at DESC")
         return [dict(row) for row in await cursor.fetchall()]
 
 

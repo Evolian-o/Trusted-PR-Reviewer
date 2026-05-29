@@ -605,8 +605,12 @@ async def review(
 
 
 @app.get("/api/history")
-async def history(owner: str | None = None, repo: str | None = None):
-    rows = await list_reviews(owner=owner, repo=repo)
+async def history(
+    keyword: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
+):
+    rows = await list_reviews(keyword=keyword, from_date=from_date, to_date=to_date)
     return {"reviews": rows}
 
 

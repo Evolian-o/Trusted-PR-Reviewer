@@ -26,15 +26,17 @@ export default function HistoryPage() {
   const [reviews, setReviews] = useState<HistoryItem[]>([])
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
-  const [ownerFilter, setOwnerFilter] = useState('')
-  const [repoFilter, setRepoFilter] = useState('')
+  const [search, setSearch] = useState('')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
 
   const fetchHistory = useCallback(async () => {
     setLoading(true)
     try {
       const params = new URLSearchParams()
-      if (ownerFilter) params.set('owner', ownerFilter)
-      if (repoFilter) params.set('repo', repoFilter)
+      if (search) params.set('keyword', search)
+      if (fromDate) params.set('from_date', fromDate)
+      if (toDate) params.set('to_date', toDate)
       const url = `/api/history${params.toString() ? '?' + params.toString() : ''}`
       const resp = await fetch(url)
       const data = await resp.json()
@@ -44,7 +46,7 @@ export default function HistoryPage() {
     } finally {
       setLoading(false)
     }
-  }, [ownerFilter, repoFilter])
+  }, [search, fromDate, toDate])
 
   useEffect(() => {
     fetchHistory()
@@ -76,20 +78,28 @@ export default function HistoryPage() {
           </button>
         </div>
 
-        <div className="flex gap-3 mb-4">
+        <div className="flex gap-3 mb-4 flex-wrap">
           <input
             type="text"
-            value={ownerFilter}
-            onChange={(e) => setOwnerFilter(e.target.value)}
-            placeholder="Owner 过滤"
-            className="px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="搜索标题 / owner / 仓库..."
+            className="flex-1 min-w-60 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <input
-            type="text"
-            value={repoFilter}
-            onChange={(e) => setRepoFilter(e.target.value)}
-            placeholder="Repo 过滤"
-            className="px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            type="date"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            className="px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            title="开始日期"
+          />
+          <span className="text-gray-500 self-center">—</span>
+          <input
+            type="date"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            className="px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            title="结束日期"
           />
         </div>
 
