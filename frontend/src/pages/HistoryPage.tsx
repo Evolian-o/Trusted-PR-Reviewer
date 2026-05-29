@@ -69,7 +69,7 @@ export default function HistoryPage() {
             <p className="text-gray-400 text-sm mt-1">本地持久化的 PR 评审记录</p>
           </div>
           <button
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/review')}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
           >
             新评审

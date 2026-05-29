@@ -90,10 +90,11 @@ async def _build_message(
 
 
 async def send_review_notification(
-    owner: str, repo: str, pr_title: str, result,
+    owner: str, repo: str, pr_title: str, result, *, user_id: int | None = None,
 ) -> None:
     """评审完成后发送邮件通知"""
-    user_id = get_user_id()
+    if user_id is None:
+        user_id = get_user_id()
     if user_id is None:
         return
 
