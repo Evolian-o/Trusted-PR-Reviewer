@@ -8,6 +8,7 @@ class FileChange(BaseModel):
     additions: int = 0
     deletions: int = 0
     language: str = ""
+    context_hint: str = ""  # 分片上下文：如 "class UserService — 方法 create_user()"
 
 
 class PRInfo(BaseModel):
@@ -19,6 +20,7 @@ class PRInfo(BaseModel):
     files: list[FileChange] = []
     additions: int = 0
     deletions: int = 0
+    head_sha: str = ""  # PR head commit SHA，用于获取完整文件内容
 
 
 class Issue(BaseModel):

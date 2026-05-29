@@ -84,4 +84,5 @@ async def fetch_pr(owner: str, repo: str, pull_number: int, token: str | None = 
         files=files,
         additions=pr_data.get("additions", 0),
         deletions=pr_data.get("deletions", 0),
+        head_sha=pr_data.get("head", {}).get("sha", ""),
     )
