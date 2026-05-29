@@ -86,3 +86,26 @@ async def fetch_pr(owner: str, repo: str, pull_number: int, token: str | None = 
         deletions=pr_data.get("deletions", 0),
         head_sha=pr_data.get("head", {}).get("sha", ""),
     )
+
+
+async def fetch_file_content(
+    owner: str, repo: str, ref: str, path: str, token: str | None = None,
+) -> str:
+    """获取仓库中指定 ref 下单个文件的完整内容（base64 解码）"""
+    import base64
+    headers = {"Accept": "application/vnd.github.v3+json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    timeout = aiohttp.ClientTimeout(total=15)
+    async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
+        url = f"{GITHUB_API}/repos/{owner}/{repo}/contents/{path}"
+        async with session.get(url, params={"ref": ref}) as resp:
+            if resp.status == 404:
+                return ""
+            resp.raise_for_status()
+            data = await resp.json()
+            content = data.get("content", "")
+            if data.get("encoding") == "base64" and content:
+                return base64.b64decode(content).decode("utf-8", errors="replace")
+            return ""
