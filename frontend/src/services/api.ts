@@ -71,6 +71,14 @@ export function streamReview(
   const url = `/api/review?${params.toString()}`
   console.log('[SSE] 连接:', url)
   const es = new EventSource(url)
+  let closed = false
+
+  const close = () => {
+    if (!closed) {
+      closed = true
+      es.close()
+    }
+  }
 
   es.addEventListener('status', (e: MessageEvent) => {
     console.log('[SSE] status:', e.data)
@@ -114,30 +122,30 @@ export function streamReview(
     try {
       const result = JSON.parse(e.data) as ReviewResult
       onDone(result)
-      es.close()
     } catch (err) {
       console.error('[SSE] done 解析失败:', e.data, err)
       onError(`结果解析失败: ${err}`)
-      es.close()
     }
+    close()
   })
 
   es.addEventListener('review_error', (e: MessageEvent) => {
     console.error('[SSE] review_error:', e.data)
     onError(e.data)
-    es.close()
+    close()
   })
 
   es.addEventListener('error', () => {
+    if (closed) return
     console.error('[SSE] 连接错误, readyState:', es.readyState)
     if (es.readyState === EventSource.CLOSED) {
       onError('连接中断，请重试')
-      es.close()
+      close()
     }
   })
 
   return () => {
     console.log('[SSE] 关闭连接')
-    es.close()
+    close()
   }
 }

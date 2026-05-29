@@ -2,6 +2,14 @@ import json
 import asyncio
 import logging
 import os
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[logging.StreamHandler()],
+)
+
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"), override=True)
 
@@ -558,22 +566,26 @@ async def event_stream(pr_url: str, provider_name: str, model: str | None):
             file_reviews=file_reviews,
         )
 
+        # 持久化保存（必须在 yield done 之前，否则浏览器关连接后代码不执行）
+        logger = logging.getLogger("main")
+        try:
+            review_id = await save_review(pr_url, provider_name, model, result)
+            logger.info(f"评审已保存: ID={review_id} provider={provider_name} model={model}")
+        except Exception as e:
+            logger.error(f"保存评审记录失败: {e}")
+
+        # 邮件通知（同样必须在 done 之前）
+        try:
+            logger.info(f"正在发送邮件通知: {owner}/{repo}#{pull_number}")
+            await send_review_notification(owner, repo, pr.title, result)
+            logger.info(f"邮件通知已发送: {owner}/{repo}#{pull_number}")
+        except Exception as e:
+            logger.error(f"邮件通知失败: {e}")
+
         yield {
             "event": "done",
             "data": result.model_dump_json(),
         }
-
-        # 持久化保存
-        try:
-            review_id = await save_review(pr_url, provider_name, model, result)
-        except Exception as e:
-            logging.getLogger("main").error(f"保存评审记录失败: {e}")
-
-        # 邮件通知
-        try:
-            await send_review_notification(owner, repo, pr.title, result)
-        except Exception as e:
-            logging.getLogger("main").error(f"邮件通知失败: {e}")
 
     except ValueError as e:
         yield {"event": "review_error", "data": str(e) or "ValueError: 无详细错误信息"}
