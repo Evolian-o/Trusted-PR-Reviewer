@@ -10,7 +10,7 @@ from fastapi.responses import RedirectResponse
 from sse_starlette.sse import EventSourceResponse
 
 from services.github_adapter import parse_pr_url, fetch_pr
-from services.diff_parser import chunk_pr
+from services.chunking import chunk_pr as smart_chunk_pr
 from services.prompt_builder import SYSTEM_PROMPT, build_user_prompt
 from services.llm_providers.base import ReviewPrompt
 from services.llm_providers.factory import get_provider, list_providers
@@ -244,8 +244,20 @@ async def event_stream(pr_url: str, provider_name: str, model: str | None):
             }),
         }
 
-        # Step 3: 按文件分片
-        chunks = chunk_pr(pr)
+        # Step 3: 按文件智能分片
+        user_id = get_user_id() or 0
+        max_chars = int(await get_setting(user_id, "chunk_max_chars", "8000"))
+        merge_max_chars = int(await get_setting(user_id, "chunk_merge_max_chars", "6000"))
+        max_lines = int(await get_setting(user_id, "chunk_max_lines", "2000"))
+        strategy = await get_setting(user_id, "chunk_strategy", "auto")
+
+        chunks = await smart_chunk_pr(
+            pr, token=get_token(),
+            max_chars=max_chars,
+            merge_max_chars=merge_max_chars,
+            fallback_max_lines=max_lines,
+            strategy=strategy,
+        )
         yield {"event": "status", "data": f"分片完成，共 {len(chunks)} 个片段待评审"}
 
         # Step 4: 获取 Provider

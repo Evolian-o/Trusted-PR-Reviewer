@@ -7,7 +7,7 @@ from services.database import (
 )
 from services.github_client import github_get
 from services.github_adapter import fetch_pr
-from services.diff_parser import chunk_pr
+from services.chunking import chunk_pr as smart_chunk_pr
 from services.prompt_builder import SYSTEM_PROMPT, build_user_prompt
 from services.llm_providers.base import ReviewPrompt
 from services.llm_providers.factory import get_provider
@@ -26,7 +26,20 @@ async def auto_review_pr(owner: str, repo: str, pull_number: int, pr_info: dict)
     """对单个 PR 执行完整评审（无 SSE 流式输出），完成后保存到 DB 并发送邮件通知"""
     try:
         pr = await fetch_pr(owner, repo, pull_number, token=get_token())
-        chunks = chunk_pr(pr)
+
+        uid = _user_id or 0
+        max_chars = int(await get_setting(uid, "chunk_max_chars", "8000"))
+        merge_max_chars = int(await get_setting(uid, "chunk_merge_max_chars", "6000"))
+        max_lines = int(await get_setting(uid, "chunk_max_lines", "2000"))
+        strategy = await get_setting(uid, "chunk_strategy", "auto")
+
+        chunks = await smart_chunk_pr(
+            pr, token=get_token(),
+            max_chars=max_chars,
+            merge_max_chars=merge_max_chars,
+            fallback_max_lines=max_lines,
+            strategy=strategy,
+        )
 
         provider = await _get_default_provider()
         model = await _get_default_model(provider.name)
