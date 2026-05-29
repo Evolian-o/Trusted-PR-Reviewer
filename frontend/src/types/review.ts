@@ -38,4 +38,34 @@ export interface ReviewProgress {
   message?: string
 }
 
+export interface FileInfo {
+  filename: string
+  language: string
+  patch: string
+}
+
+export interface ModelInfo {
+  provider: string
+  model: string
+}
+
 export type ReviewPhase = 'idle' | 'loading' | 'progress' | 'streaming' | 'done' | 'error'
+
+export interface ProviderInfo {
+  name: string
+  display_name: string
+  is_builtin: boolean
+  is_enabled: boolean
+  default_model: string
+  models: string[]
+  needs_config: boolean
+}
+
+export interface CustomProviderInput {
+  name: string
+  display_name: string
+  base_url: string
+  api_key: string
+  default_model: string
+  timeout?: number
+}

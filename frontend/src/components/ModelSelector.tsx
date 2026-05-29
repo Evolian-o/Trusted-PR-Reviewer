@@ -1,3 +1,7 @@
+import { useState, useEffect } from 'react'
+import { fetchProviders, fetchProviderModels } from '../services/api'
+import type { ProviderInfo } from '../types/review'
+
 interface Props {
   provider: string
   model: string
@@ -5,25 +9,48 @@ interface Props {
   onModelChange: (v: string) => void
 }
 
-const PROVIDER_OPTIONS = [
-  { value: 'ollama', label: 'Ollama (本地)' },
-  { value: 'deepseek', label: 'DeepSeek (在线)' },
-  { value: 'doubao', label: '豆包 (在线)' },
-  { value: 'openai', label: 'OpenAI (在线)' },
-]
-
-const DEFAULT_MODELS: Record<string, string> = {
-  ollama: 'qwen3.5:latest',
-  deepseek: 'deepseek-chat',
-  doubao: 'doubao-pro-32k',
-  openai: 'gpt-4o-mini',
-}
-
 export default function ModelSelector({ provider, model, onProviderChange, onModelChange }: Props) {
+  const [providers, setProviders] = useState<ProviderInfo[]>([])
+  const [models, setModels] = useState<string[]>([])
+  const [loadingModels, setLoadingModels] = useState(false)
+  const [manualModel, setManualModel] = useState(false)
+
+  useEffect(() => {
+    fetchProviders().then(setProviders).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!provider) return
+    const info = providers.find((p) => p.name === provider)
+    if (info?.models?.length) {
+      setModels(info.models)
+      setManualModel(false)
+    } else {
+      setModels([])
+      // 尝试从 API 加载模型列表
+      setLoadingModels(true)
+      fetchProviderModels(provider)
+        .then((list) => {
+          if (list.length > 0) {
+            setModels(list)
+            setManualModel(false)
+          } else {
+            setManualModel(true)
+          }
+        })
+        .catch(() => setManualModel(true))
+        .finally(() => setLoadingModels(false))
+    }
+  }, [provider, providers])
+
   const handleProviderChange = (v: string) => {
     onProviderChange(v)
-    onModelChange(DEFAULT_MODELS[v] || '')
+    const info = providers.find((p) => p.name === v)
+    onModelChange(info?.default_model || '')
+    setManualModel(false)
   }
+
+  const currentProvider = providers.find((p) => p.name === provider)
 
   return (
     <div>
@@ -34,17 +61,44 @@ export default function ModelSelector({ provider, model, onProviderChange, onMod
           onChange={(e) => handleProviderChange(e.target.value)}
           className="px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
-          {PROVIDER_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          {providers.map((p) => (
+            <option key={p.name} value={p.name}>
+              {p.display_name}
+            </option>
           ))}
         </select>
-        <input
-          type="text"
-          value={model}
-          onChange={(e) => onModelChange(e.target.value)}
-          placeholder={DEFAULT_MODELS[provider] || '输入模型名'}
-          className="flex-1 px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+
+        {loadingModels ? (
+          <div className="flex-1 px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg text-gray-500 text-sm flex items-center">
+            加载模型列表...
+          </div>
+        ) : models.length > 0 && !manualModel ? (
+          <select
+            value={model}
+            onChange={(e) => {
+              if (e.target.value === '__manual__') {
+                setManualModel(true)
+                onModelChange('')
+              } else {
+                onModelChange(e.target.value)
+              }
+            }}
+            className="flex-1 px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {models.map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+            <option value="__manual__">输入其他模型...</option>
+          </select>
+        ) : (
+          <input
+            type="text"
+            value={model}
+            onChange={(e) => onModelChange(e.target.value)}
+            placeholder={currentProvider?.default_model || '输入模型名'}
+            className="flex-1 px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        )}
       </div>
     </div>
   )

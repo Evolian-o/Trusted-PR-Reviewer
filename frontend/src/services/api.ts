@@ -1,4 +1,57 @@
-import type { ReviewProgress, ReviewResult } from '../types/review'
+import type { ReviewProgress, ReviewResult, ProviderInfo, CustomProviderInput } from '../types/review'
+
+export async function fetchProviders(): Promise<ProviderInfo[]> {
+  const resp = await fetch('/api/providers')
+  const data = await resp.json()
+  return data.providers || []
+}
+
+export async function fetchProviderModels(providerName: string): Promise<string[]> {
+  const resp = await fetch(`/api/providers/${providerName}/models`)
+  const data = await resp.json()
+  return data.models || []
+}
+
+export async function createCustomProvider(input: CustomProviderInput): Promise<void> {
+  const resp = await fetch('/api/providers/custom', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ error: '创建失败' }))
+    throw new Error(err.error || err.detail || '创建失败')
+  }
+}
+
+export async function updateCustomProvider(name: string, input: Partial<CustomProviderInput>): Promise<void> {
+  const resp = await fetch(`/api/providers/custom/${name}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ error: '更新失败' }))
+    throw new Error(err.error || err.detail || '更新失败')
+  }
+}
+
+export async function deleteCustomProvider(name: string): Promise<void> {
+  const resp = await fetch(`/api/providers/custom/${name}`, { method: 'DELETE' })
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ error: '删除失败' }))
+    throw new Error(err.error || err.detail || '删除失败')
+  }
+}
+
+export async function testProviderConnection(name: string, data?: CustomProviderInput): Promise<{ok: boolean, error?: string}> {
+  const resp = await fetch(`/api/providers/custom/${name}/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data || {}),
+  })
+  return resp.json()
+}
 
 export function streamReview(
   prUrl: string,
@@ -9,6 +62,8 @@ export function streamReview(
   onToken: (token: string) => void,
   onDone: (result: ReviewResult) => void,
   onError: (error: string) => void,
+  onModelInfo?: (info: { provider: string; model: string }) => void,
+  onFileInfo?: (info: { filename: string; language: string; patch: string }) => void,
 ): () => void {
   const params = new URLSearchParams({ url: prUrl, provider })
   if (model) params.set('model', model)
@@ -32,8 +87,21 @@ export function streamReview(
     }
   })
 
+  es.addEventListener('model_info', (e: MessageEvent) => {
+    try {
+      const info = JSON.parse(e.data)
+      onModelInfo?.(info)
+    } catch { /* ignore */ }
+  })
+
+  es.addEventListener('file_info', (e: MessageEvent) => {
+    try {
+      const info = JSON.parse(e.data)
+      onFileInfo?.(info)
+    } catch { /* ignore */ }
+  })
+
   es.addEventListener('token', (e: MessageEvent) => {
-    console.log('[SSE] token:', JSON.stringify(e.data))
     onToken(e.data)
   })
 
