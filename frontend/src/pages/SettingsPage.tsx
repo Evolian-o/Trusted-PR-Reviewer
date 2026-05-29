@@ -5,6 +5,10 @@ interface Settings {
   poll_interval_seconds: string
   default_provider: string
   default_model: string
+  chunk_max_chars: string
+  chunk_merge_max_chars: string
+  chunk_max_lines: string
+  chunk_strategy: string
   email: {
     smtp_host: string
     smtp_port: number
@@ -32,6 +36,10 @@ export default function SettingsPage() {
     poll_interval_seconds: '300',
     default_provider: 'ollama',
     default_model: '',
+    chunk_max_chars: '8000',
+    chunk_merge_max_chars: '6000',
+    chunk_max_lines: '2000',
+    chunk_strategy: 'auto',
     email: {
       smtp_host: '',
       smtp_port: 465,
@@ -178,6 +186,68 @@ export default function SettingsPage() {
             <p className="text-gray-500 text-xs mt-1">
               默认 300 秒（5 分钟），最短 60 秒
             </p>
+          </div>
+        </section>
+
+        {/* 评审策略 */}
+        <section>
+          <h2 className="text-white font-semibold mb-4">评审策略</h2>
+          <div className="bg-gray-800 rounded-lg p-5 space-y-4">
+            <div>
+              <label className="text-gray-400 text-sm block mb-1">分片策略</label>
+              <select
+                value={settings.chunk_strategy}
+                onChange={(e) => update('chunk_strategy', e.target.value)}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="auto">自动 (AST → 正则 → 行级)</option>
+                <option value="ast">仅 AST (tree-sitter)</option>
+                <option value="regex">仅正则</option>
+                <option value="line">仅行级</option>
+              </select>
+              <p className="text-gray-500 text-xs mt-1">
+                推荐使用自动模式，系统会自动选择最优分片方式
+              </p>
+            </div>
+            <div>
+              <label className="text-gray-400 text-sm block mb-1">Chunk 最大字符数</label>
+              <input
+                type="number"
+                value={settings.chunk_max_chars}
+                onChange={(e) => update('chunk_max_chars', e.target.value)}
+                min={1000}
+                max={32000}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="text-gray-400 text-sm block mb-1">Chunk 合并阈值（字符数）</label>
+              <input
+                type="number"
+                value={settings.chunk_merge_max_chars}
+                onChange={(e) => update('chunk_merge_max_chars', e.target.value)}
+                min={1000}
+                max={32000}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-gray-500 text-xs mt-1">
+                相邻小函数累计不超过此值时合并到同一 chunk
+              </p>
+            </div>
+            <div>
+              <label className="text-gray-400 text-sm block mb-1">行级兜底最大行数</label>
+              <input
+                type="number"
+                value={settings.chunk_max_lines}
+                onChange={(e) => update('chunk_max_lines', e.target.value)}
+                min={500}
+                max={10000}
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-gray-500 text-xs mt-1">
+                当 AST 和正则均不可用时，按此行数切分
+              </p>
+            </div>
           </div>
         </section>
 
