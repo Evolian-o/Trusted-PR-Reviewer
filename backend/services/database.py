@@ -45,14 +45,14 @@ async def init_db():
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_monitor_user_repo ON monitored_repos(user_id, owner, repo)"
         )
 
-        # 迁移旧表（SMTP 字段 → 简化 Resend 模式）
+        # 迁移旧表（自动删除不兼容的旧 schema）
         cursor = await db.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='email_config'"
         )
         if await cursor.fetchone():
             cols = await db.execute("PRAGMA table_info(email_config)")
             col_names = [row[1] for row in await cols.fetchall()]
-            if "smtp_host" in col_names:
+            if "password" not in col_names:
                 await db.execute("DROP TABLE email_config")
 
         await db.execute("""
@@ -60,6 +60,7 @@ async def init_db():
                 id       INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id  INTEGER NOT NULL UNIQUE,
                 to_email TEXT NOT NULL,
+                password TEXT NOT NULL,
                 enabled  INTEGER DEFAULT 0
             )
         """)
@@ -236,10 +237,10 @@ async def save_email_config(user_id: int, config: dict) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """INSERT OR REPLACE INTO email_config
-               (user_id, to_email, enabled)
-               VALUES (?, ?, ?)""",
+               (user_id, to_email, password, enabled)
+               VALUES (?, ?, ?, ?)""",
             (
-                user_id, config["to_email"],
+                user_id, config["to_email"], config.get("password", ""),
                 1 if config.get("enabled") else 0,
             ),
         )

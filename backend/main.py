@@ -390,6 +390,7 @@ async def settings_get():
         "chunk_strategy": kv.get("chunk_strategy", "auto"),
         "email": {
             "to_email": email.get("to_email", "") if email else "",
+            "password": email.get("password", "") if email else "",
             "enabled": bool(email.get("enabled")) if email else False,
         },
     }

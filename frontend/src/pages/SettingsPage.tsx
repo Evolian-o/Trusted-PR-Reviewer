@@ -11,6 +11,7 @@ interface Settings {
   chunk_strategy: string
   email: {
     to_email: string
+    password: string
     enabled: boolean
   }
 }
@@ -38,6 +39,7 @@ export default function SettingsPage() {
     chunk_strategy: 'auto',
     email: {
       to_email: '',
+      password: '',
       enabled: false,
     },
   })
@@ -270,7 +272,20 @@ export default function SettingsPage() {
                 className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <p className="text-gray-500 text-xs mt-1">
-                通过 Resend 发送，无需配置 SMTP
+                主机/端口自动匹配，支持 QQ / Gmail / 163 / Outlook 等
+              </p>
+            </div>
+            <div>
+              <label className="text-gray-400 text-sm block mb-1">SMTP 授权码</label>
+              <input
+                type="password"
+                value={settings.email.password}
+                onChange={(e) => update('email.password', e.target.value)}
+                placeholder="邮箱平台获取的授权码"
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-gray-500 text-xs mt-1">
+                QQ邮箱 → 设置 → 账户 → POP3/SMTP服务；Gmail → App Passwords
               </p>
             </div>
 
