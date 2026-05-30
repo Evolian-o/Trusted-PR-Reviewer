@@ -28,6 +28,7 @@ export default function ReviewReportPage() {
   const prUrl = `https://github.com/${owner}/${repo}/pull/${pr}`
   const provider = searchParams.get('provider') || 'deepseek'
   const model = searchParams.get('model')
+  const dims = searchParams.get('dims')
   const reviewId = searchParams.get('reviewId')
   const [fromCache, setFromCache] = useState(false)
 
@@ -59,6 +60,7 @@ export default function ReviewReportPage() {
       prUrl,
       provider,
       model,
+      dims,
       (msg) => setStatusMsg(msg),
       (p) => {
         setProgress(p)

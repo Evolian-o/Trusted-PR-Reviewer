@@ -84,6 +84,7 @@ export function streamReview(
   prUrl: string,
   provider: string,
   model: string | null,
+  dims: string | null,
   onStatus: (msg: string) => void,
   onProgress: (p: ReviewProgress) => void,
   onToken: (token: string) => void,
@@ -94,6 +95,7 @@ export function streamReview(
 ): () => void {
   const params = new URLSearchParams({ url: prUrl, provider })
   if (model) params.set('model', model)
+  if (dims) params.set('dims', dims)
 
   const url = `/api/review?${params.toString()}`
   console.log('[SSE] 连接:', url)

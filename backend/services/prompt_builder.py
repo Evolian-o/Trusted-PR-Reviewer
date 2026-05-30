@@ -1,14 +1,13 @@
 from models.review import PRInfo, FileChange
 
-SYSTEM_PROMPT = """你是一名资深代码评审专家。审查以下 Pull Request 中的单个文件变更。
+_ALL_DIMENSIONS = {
+    "bug": "Bug 风险 — 空指针、边界条件、异常处理、逻辑错误",
+    "security": "安全漏洞 — 注入攻击、敏感信息泄露、权限绕过",
+    "performance": "性能问题 — N+1 查询、内存泄漏、不必要循环",
+    "style": "代码规范 — 命名、可读性、SOLID 原则",
+}
 
-## 评审维度
-1. **Bug 风险** — 空指针、边界条件、异常处理、逻辑错误
-2. **安全漏洞** — 注入攻击、敏感信息泄露、权限绕过
-3. **性能问题** — N+1 查询、内存泄漏、不必要循环
-4. **代码规范** — 命名、可读性、SOLID 原则
-
-## 输出格式
+_OUTPUT_FORMAT = """## 输出格式
 必须返回合法的 JSON，不要包含 markdown 代码块标记：
 {
   "summary": "一句话总结这个文件的变更目的",
@@ -24,6 +23,25 @@ SYSTEM_PROMPT = """你是一名资深代码评审专家。审查以下 Pull Requ
   "suggestions": ["整体优化建议"]
 }
 如果没有发现问题，issues 返回空数组 []。"""
+
+
+def build_system_prompt(dimensions: list[str] | None = None) -> str:
+    dims = [d for d in (dimensions or list(_ALL_DIMENSIONS.keys())) if d in _ALL_DIMENSIONS]
+    if not dims:
+        dims = list(_ALL_DIMENSIONS.keys())
+    items = "\n".join(
+        f"{i+1}. **{_ALL_DIMENSIONS[d]}**"
+        for i, d in enumerate(dims)
+    )
+    return f"""你是一名资深代码评审专家。审查以下 Pull Request 中的单个文件变更。
+
+## 评审维度
+{items}
+
+{_OUTPUT_FORMAT}"""
+
+
+SYSTEM_PROMPT = build_system_prompt()
 
 MAX_DIFF_CHARS = 8000
 

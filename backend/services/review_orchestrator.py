@@ -5,7 +5,7 @@ import logging
 
 from services.github_adapter import parse_pr_url, fetch_pr
 from services.chunking import chunk_pr as smart_chunk_pr
-from services.prompt_builder import SYSTEM_PROMPT, build_user_prompt
+from services.prompt_builder import build_system_prompt, build_user_prompt
 from services.llm_providers.base import ReviewPrompt
 from services.llm_providers.factory import get_provider, load_custom_providers
 from services.result_formatter import parse_llm_output, build_review_result
@@ -23,6 +23,7 @@ async def run_review_pipeline(
     *,
     token: str | None = None,
     user_id: int = 0,
+    dimensions: list[str] | None = None,
 ):
     """异步生成器，逐步产出 SSE 事件 dict
 
@@ -32,6 +33,7 @@ async def run_review_pipeline(
         model:         模型名（optional，用 provider 默认值）
         token:         GitHub OAuth Token（可选）
         user_id:       当前用户 ID（用于设置/自定义提供商查询）
+        dimensions:    评审维度列表（可选，默认全部）
 
     产出的事件类型：
         status         — 阶段描述
@@ -108,7 +110,7 @@ async def run_review_pipeline(
         }
 
         user_prompt = build_user_prompt(pr, fc)
-        prompt = ReviewPrompt(system=SYSTEM_PROMPT, user=user_prompt)
+        prompt = ReviewPrompt(system=build_system_prompt(dimensions), user=user_prompt)
 
         full_text = ""
         try:
@@ -179,12 +181,14 @@ async def run_review_pipeline_sync(
     *,
     token: str | None = None,
     user_id: int = 0,
+    dimensions: list[str] | None = None,
 ):
     """非流式版本 — 消费所有事件，返回 JSON 字符串结果（供调度器等非 SSE 场景使用）"""
     done_data: str | None = None
     async for event in run_review_pipeline(
         pr_url, provider_name, model,
         token=token, user_id=user_id,
+        dimensions=dimensions,
     ):
         if event["event"] == "done":
             done_data = event["data"]
