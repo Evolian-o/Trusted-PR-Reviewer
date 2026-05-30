@@ -103,34 +103,35 @@ async def run_review_pipeline(
 
         user_prompt = build_user_prompt(pr, fc)
 
-        # ── Phase 1: 安全审查 ──
-        yield {
-            "event": "progress",
-            "data": json.dumps({
-                "phase": "reviewing_security",
-                "current": idx,
-                "total": len(chunks),
-                "file": fc.filename,
-                "language": fc.language,
-            }),
-        }
-
+        # ── Phase 1: 安全审查（仅当选中安全维度时执行）──
         security_issues: list = []
-        try:
-            sec_prompt = ReviewPrompt(system=build_security_prompt(), user=user_prompt)
-            sec_text = ""
-            async for token_text in provider.review(sec_prompt, model=model):
-                sec_text += token_text
-                yield {"event": "token", "data": token_text}
-                await asyncio.sleep(0)
-            _, security_issues, _, _ = parse_llm_output(sec_text, fc.filename)
-            # 安全检查的 issues 统一标记为 security 类别
-            for si in security_issues:
-                if si.category not in ("bug", "security", "performance", "style"):
-                    si.category = "security"
-        except Exception as e:
-            msg = str(e).strip() or f"{type(e).__name__}(无详细错误信息)"
-            yield {"event": "review_error", "data": f"安全检查失败 [{fc.filename}]: {msg}"}
+        if dimensions is None or "security" in dimensions:
+            yield {
+                "event": "progress",
+                "data": json.dumps({
+                    "phase": "reviewing_security",
+                    "current": idx,
+                    "total": len(chunks),
+                    "file": fc.filename,
+                    "language": fc.language,
+                }),
+            }
+
+            try:
+                sec_prompt = ReviewPrompt(system=build_security_prompt(), user=user_prompt)
+                sec_text = ""
+                async for token_text in provider.review(sec_prompt, model=model):
+                    sec_text += token_text
+                    yield {"event": "token", "data": token_text}
+                    await asyncio.sleep(0)
+                _, security_issues, _, _ = parse_llm_output(sec_text, fc.filename)
+                # 安全检查的 issues 统一标记为 security 类别
+                for si in security_issues:
+                    if si.category not in ("bug", "security", "performance", "style"):
+                        si.category = "security"
+            except Exception as e:
+                msg = str(e).strip() or f"{type(e).__name__}(无详细错误信息)"
+                yield {"event": "review_error", "data": f"安全检查失败 [{fc.filename}]: {msg}"}
 
         # ── Phase 2: 常规评审（Bug/性能/规范）──
         yield {
@@ -175,6 +176,9 @@ async def run_review_pipeline(
         try:
             summary, issues, suggestions, scores = parse_llm_output(full_text, fc.filename)
             all_issues = security_issues + list(issues)
+            # 按选中维度过滤（防 LLM 返回未选中维度的 issue）
+            if dimensions is not None:
+                all_issues = [i for i in all_issues if i.category in dimensions]
             file_reviews.append(FileReview(
                 file=fc.filename,
                 summary=summary,
