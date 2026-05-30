@@ -1,5 +1,9 @@
 import pytest
-from services.result_formatter import parse_llm_output
+from services.result_formatter import (
+    parse_llm_output, build_review_result,
+    determine_risk_level, build_category_summary,
+)
+from models.review import Issue, FileReview, ReviewResult
 
 
 class TestParseLlmOutput:
@@ -77,3 +81,106 @@ class TestNormalizeIssues:
         _, issues, _, _scores = parse_llm_output(text, "test.py")
         assert issues[0].severity == "medium"
         assert issues[0].description == ""
+
+
+class TestDetermineRiskLevel:
+    def test_empty_issues_low(self):
+        assert determine_risk_level([]) == "low"
+
+    def test_critical_gives_high(self):
+        issues = [Issue(severity="critical", file="x", line=1, category="security",
+                        description="", suggestion="", current_code="", proposed_code="",
+                        confidence=90, priority="must_fix")]
+        assert determine_risk_level(issues) == "high"
+
+    def test_high_gives_medium(self):
+        issues = [Issue(severity="high", file="x", line=1, category="bug",
+                        description="", suggestion="", current_code="", proposed_code="",
+                        confidence=70, priority="should_fix")]
+        assert determine_risk_level(issues) == "medium"
+
+    def test_only_low_returns_low(self):
+        issues = [
+            Issue(severity="low", file="x", line=1, category="style",
+                  description="", suggestion="", current_code="", proposed_code="",
+                  confidence=30, priority="nice_to_fix"),
+            Issue(severity="medium", file="y", line=2, category="performance",
+                  description="", suggestion="", current_code="", proposed_code="",
+                  confidence=50, priority="should_fix"),
+        ]
+        assert determine_risk_level(issues) == "low"
+
+
+class TestBuildCategorySummary:
+    def test_empty_issues(self):
+        text = build_category_summary([], [])
+        assert "未发现问题" in text
+
+    def test_groups_by_category(self):
+        issues = [
+            Issue(severity="high", file="a.py", line=1, category="security",
+                  description="SQL 注入", suggestion="参数化", current_code="", proposed_code="",
+                  confidence=90, priority="must_fix"),
+            Issue(severity="medium", file="b.py", line=2, category="bug",
+                  description="空指针", suggestion="检查 null", current_code="", proposed_code="",
+                  confidence=70, priority="should_fix"),
+        ]
+        text = build_category_summary(issues, [])
+        assert "安全漏洞" in text
+        assert "逻辑缺陷" in text
+
+    def test_includes_suggestions(self):
+        issues = [Issue(severity="low", file="x.py", line=1, category="style",
+                        description="命名", suggestion="改名", current_code="", proposed_code="",
+                        confidence=40, priority="nice_to_fix")]
+        text = build_category_summary(issues, ["统一编码风格"])
+        assert "统一编码风格" in text
+
+
+class TestBuildReviewResult:
+    def test_aggregates_issues_from_all_files(self):
+        fr1 = FileReview(file="a.py", summary="ok", issues=[
+            Issue(severity="high", file="a.py", line=1, category="bug",
+                  description="", suggestion="", current_code="", proposed_code="",
+                  confidence=80, priority="must_fix"),
+        ], suggestions=[], scores={"overall": 70, "security": 80, "bug": 50, "performance": 80, "style": 80})
+        fr2 = FileReview(file="b.py", summary="ok", issues=[
+            Issue(severity="medium", file="b.py", line=2, category="style",
+                  description="", suggestion="", current_code="", proposed_code="",
+                  confidence=50, priority="nice_to_fix"),
+        ], suggestions=["add tests"], scores={"overall": 90, "security": 90, "bug": 90, "performance": 90, "style": 90})
+        result = build_review_result(
+            pr_title="Test PR", owner="owner", repo="repo", pull_number=1,
+            files_changed=2, additions=10, deletions=5, file_reviews=[fr1, fr2])
+        assert len(result.issues) == 2
+        assert "add tests" in result.suggestions
+
+    def test_scores_averaged(self):
+        fr1 = FileReview(file="a.py", summary="", issues=[], suggestions=[],
+                         scores={"overall": 60, "security": 70, "bug": 50, "performance": 60, "style": 60})
+        fr2 = FileReview(file="b.py", summary="", issues=[], suggestions=[],
+                         scores={"overall": 80, "security": 90, "bug": 70, "performance": 80, "style": 80})
+        result = build_review_result(
+            pr_title="PR", owner="o", repo="r", pull_number=1,
+            files_changed=2, additions=0, deletions=0, file_reviews=[fr1, fr2])
+        assert result.scores["overall"] == 70  # (60+80)/2
+        assert result.scores["security"] == 80  # (70+90)/2
+
+    def test_risk_level_high_with_critical(self):
+        fr = FileReview(file="a.py", summary="", issues=[
+            Issue(severity="critical", file="a.py", line=1, category="security",
+                  description="", suggestion="", current_code="", proposed_code="",
+                  confidence=95, priority="must_fix"),
+        ], suggestions=[], scores={"overall": 0, "security": 0, "bug": 0, "performance": 0, "style": 0})
+        result = build_review_result(
+            pr_title="PR", owner="o", repo="r", pull_number=1,
+            files_changed=1, additions=0, deletions=0, file_reviews=[fr])
+        assert result.risk_level == "high"
+
+    def test_header_contains_counts(self):
+        result = build_review_result(
+            pr_title="Test", owner="o", repo="r", pull_number=1,
+            files_changed=1, additions=10, deletions=3, file_reviews=[])
+        assert "10" in result.summary
+        assert "3" in result.summary
+        assert "0 个问题" in result.summary
