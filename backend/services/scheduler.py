@@ -49,9 +49,12 @@ async def _get_default_model(provider_name: str) -> str | None:
     model = await get_setting(_user_id or 0, "default_model", "")
     if model:
         return model
-    defaults = {"ollama": "qwen3.5:latest", "deepseek": "deepseek-chat",
-                 "doubao": "doubao-seed-2-0-pro-260215", "openai": "gpt-4o-mini"}
-    return defaults.get(provider_name)
+    try:
+        from services.llm_providers.factory import get_provider
+        provider = get_provider(provider_name)
+        return provider.default_model or None
+    except (ValueError, AttributeError):
+        return None
 
 
 async def _poll_repos(user_id: int) -> None:
