@@ -36,6 +36,35 @@ try:
 except Exception:
     pass
 
+try:
+    import tree_sitter_rust
+    _rs_lang = Language(tree_sitter_rust.language())
+    _parsers["rust"] = Parser(_rs_lang)
+except Exception:
+    pass
+
+try:
+    import tree_sitter_java
+    _java_lang = Language(tree_sitter_java.language())
+    _parsers["java"] = Parser(_java_lang)
+except Exception:
+    pass
+
+try:
+    import tree_sitter_c_sharp
+    _cs_lang = Language(tree_sitter_c_sharp.language())
+    _parsers["c_sharp"] = Parser(_cs_lang)
+    _parsers["c#"] = Parser(_cs_lang)
+except Exception:
+    pass
+
+try:
+    import tree_sitter_ruby
+    _rb_lang = Language(tree_sitter_ruby.language())
+    _parsers["ruby"] = Parser(_rb_lang)
+except Exception:
+    pass
+
 # ── AST 节点类型 ── 每种语言需要提取的函数/类节点 ──────────
 
 FUNCTION_NODE_TYPES: dict[str, list[str]] = {
@@ -53,6 +82,11 @@ FUNCTION_NODE_TYPES: dict[str, list[str]] = {
         "method_definition", "arrow_function",
     ],
     "go": ["function_declaration", "method_declaration", "type_declaration"],
+    "rust": ["function_item", "impl_item", "trait_item", "struct_item", "enum_item"],
+    "java": ["method_declaration", "class_declaration", "interface_declaration", "constructor_declaration"],
+    "c_sharp": ["method_declaration", "class_declaration", "interface_declaration", "struct_declaration", "constructor_declaration"],
+    "c#": ["method_declaration", "class_declaration", "interface_declaration", "struct_declaration", "constructor_declaration"],
+    "ruby": ["method", "class", "module", "singleton_method"],
 }
 
 # ── 正则兜底 ── 每种语言识别函数定义行的模式 ──────────────
@@ -67,6 +101,8 @@ REGEX_PATTERNS: dict[str, str] = {
     "java": r"^\s*(?:public|private|protected)?\s*(?:static)?\s*[\w<>\[\]]+\s+\w+\(",
     "c": r"^\w+\s+\w+\(",
     "ruby": r"^\s*(?:def |class )",
+    "c_sharp": r"^\s*(?:public|private|protected|internal)?\s*(?:static|virtual|override|abstract|async)?\s*[\w<>\[\],\s]+\s+\w+\(",
+    "c#": r"^\s*(?:public|private|protected|internal)?\s*(?:static|virtual|override|abstract|async)?\s*[\w<>\[\],\s]+\s+\w+\(",
 }
 
 # ── 语言名规范化 ── github_adapter 中的显示名映射到 registry 键 ──
