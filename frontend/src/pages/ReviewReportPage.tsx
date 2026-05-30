@@ -43,7 +43,11 @@ export default function ReviewReportPage() {
   const model = searchParams.get('model')
   const dims = searchParams.get('dims')
   const reviewId = searchParams.get('reviewId')
+  const compareModel = searchParams.get('compare_model')
   const [fromCache, setFromCache] = useState(false)
+  const [compareResult, setCompareResult] = useState<ReviewResult | null>(null)
+  const [viewMode, setViewMode] = useState<'primary' | 'compare'>('primary')
+  const activeResult = viewMode === 'compare' && compareResult ? compareResult : result
 
   // 监听滚动：FAB 可见性 + 导航高亮
   useEffect(() => {
@@ -129,6 +133,8 @@ export default function ReviewReportPage() {
           return next
         })
       },
+      (compareR) => setCompareResult(compareR),
+      compareModel,
     )
 
     return close
@@ -301,18 +307,69 @@ export default function ReviewReportPage() {
             </nav>
 
             <div className="space-y-6">
+              {/* 多模型对比 Tab */}
+              {compareResult && (
+                <>
+                  <div className="flex gap-2 bg-gray-800 border border-gray-700 rounded-lg p-1">
+                    <button
+                      onClick={() => setViewMode('primary')}
+                      className={`flex-1 py-2 rounded text-sm font-medium transition-colors ${
+                        viewMode === 'primary'
+                          ? 'bg-blue-600 text-white'
+                          : 'text-gray-400 hover:text-gray-200'
+                      }`}
+                    >
+                      {modelInfo?.model || '主模型'} ({result.issues.length} 问题)
+                    </button>
+                    <button
+                      onClick={() => setViewMode('compare')}
+                      className={`flex-1 py-2 rounded text-sm font-medium transition-colors ${
+                        viewMode === 'compare'
+                          ? 'bg-indigo-600 text-white'
+                          : 'text-gray-400 hover:text-gray-200'
+                      }`}
+                    >
+                      {compareModel || '对比模型'} ({compareResult.issues.length} 问题)
+                    </button>
+                  </div>
+
+                  {/* 指标对比面板 */}
+                  <div className="grid grid-cols-4 gap-3 text-center">
+                    {['overall', 'security', 'bug', 'performance'].map((dim) => {
+                      const labels: Record<string, string> = { overall: '综合', security: '安全', bug: 'Bug', performance: '性能' }
+                      const pVal = result.scores[dim] || 0
+                      const cVal = compareResult.scores[dim] || 0
+                      const diff = cVal - pVal
+                      return (
+                        <div key={dim} className="bg-gray-800 border border-gray-700 rounded-lg p-3">
+                          <p className="text-xs text-gray-500 mb-1">{labels[dim]}</p>
+                          <div className="flex items-center justify-center gap-2">
+                            <span className="text-lg font-bold text-blue-400">{pVal}</span>
+                            <span className="text-gray-600 text-xs">vs</span>
+                            <span className="text-lg font-bold text-indigo-400">{cVal}</span>
+                          </div>
+                          <p className={`text-xs mt-1 ${diff > 0 ? 'text-green-400' : diff < 0 ? 'text-red-400' : 'text-gray-500'}`}>
+                            {diff > 0 ? `+${diff}` : diff}
+                          </p>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+
               <div ref={overviewRef} id="overview" className="scroll-mt-16">
                 <PRInfoBar result={result} />
               </div>
               <SummaryCard result={result} />
 
               {/* 逐文件：代码对比 + 问题 */}
-              {result.file_reviews.length > 0 && (
+              {activeResult.file_reviews.length > 0 && (
                 <div ref={codeReviewRef} id="code-review" className="space-y-4 scroll-mt-16">
                   <h2 className="text-lg font-bold text-white flex items-center gap-2">
                     代码审查详情
                     <span className="text-sm font-normal text-gray-400">
-                      ({result.file_reviews.length} 个文件)
+                      ({activeResult.file_reviews.length} 个文件)
                     </span>
                   </h2>
                   {fromCache && (
@@ -321,7 +378,7 @@ export default function ReviewReportPage() {
                     </p>
                   )}
 
-                  {result.file_reviews.map((fr) => {
+                  {activeResult.file_reviews.map((fr) => {
                     const patch = allPatches.get(fr.file)
                     const isCollapsed = collapsedFiles.has(fr.file)
                     const inlineIssues = new Map<number, typeof fr.issues>()
@@ -425,7 +482,7 @@ export default function ReviewReportPage() {
               )}
 
               {/* 底部：问题汇总 */}
-              <IssueList issues={result.issues} />
+              <IssueList issues={activeResult.issues} />
 
               {/* 历史趋势对比 */}
               {trend.length > 1 && (

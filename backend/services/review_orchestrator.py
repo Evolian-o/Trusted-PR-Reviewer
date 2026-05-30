@@ -10,6 +10,7 @@ from services.llm_providers.base import ReviewPrompt
 from services.llm_providers.factory import get_provider, load_custom_providers
 from services.result_formatter import parse_llm_output, build_review_result
 from services.database import save_review, get_setting
+from services.github_client import create_pr_review
 from services.email_notifier import send_review_notification
 from models.review import FileReview
 
@@ -24,6 +25,7 @@ async def run_review_pipeline(
     token: str | None = None,
     user_id: int = 0,
     dimensions: list[str] | None = None,
+    compare_model: str | None = None,
 ):
     """异步生成器，逐步产出 SSE 事件 dict
 
@@ -185,6 +187,44 @@ async def run_review_pipeline(
             }),
         }
 
+    # Step 5b: 对比模型评审（可选）
+    compare_reviews: list[FileReview] | None = None
+    if compare_model:
+        compare_reviews = []
+        compare_provider = get_provider(provider_name)  # 同提供商、不同模型
+        yield {"event": "status", "data": f"对比模型 {compare_model} 开始评审..."}
+        for idx, fc in enumerate(chunks, start=1):
+            yield {
+                "event": "progress",
+                "data": json.dumps({
+                    "phase": "reviewing_normal",
+                    "current": idx,
+                    "total": len(chunks),
+                    "file": fc.filename,
+                    "language": fc.language,
+                }),
+            }
+            try:
+                compare_prompt = ReviewPrompt(
+                    system=build_system_prompt(dimensions),
+                    user=build_user_prompt(pr, fc),
+                )
+                compare_text = ""
+                async for token_text in compare_provider.review(compare_prompt, model=compare_model):
+                    compare_text += token_text
+                    await asyncio.sleep(0)
+                c_summary, c_issues, c_suggestions, c_scores = parse_llm_output(compare_text, fc.filename)
+                compare_reviews.append(FileReview(
+                    file=fc.filename,
+                    summary=c_summary,
+                    issues=c_issues,
+                    suggestions=c_suggestions,
+                    scores=c_scores,
+                ))
+            except Exception as e:
+                logger.warning(f"对比模型评审失败 [{fc.filename}]: {e}")
+                continue
+
     # Step 6: 汇总结果
     result = build_review_result(
         pr_title=pr.title,
@@ -201,6 +241,31 @@ async def run_review_pipeline(
     except Exception as e:
         logger.error(f"保存评审记录失败: {e}")
 
+    # 自动同步到 GitHub PR Review
+    try:
+        auto_sync = await get_setting(user_id, "auto_sync_github", "false")
+        if auto_sync == "true" and pr.head_sha:
+            gh_comments = []
+            for fr in file_reviews:
+                for issue in fr.issues:
+                    if issue.line:
+                        gh_comments.append({
+                            "path": issue.file,
+                            "line": issue.line,
+                            "side": "RIGHT",
+                            "body": f"**[{issue.severity.upper()}] {issue.category}** (置信度 {issue.confidence}%)\n\n{issue.description}\n\n> {issue.suggestion}" if issue.suggestion else f"**[{issue.severity.upper()}] {issue.category}**\n\n{issue.description}",
+                        })
+            if gh_comments:
+                review_body = result.summary[:1000] if result.summary else "自动化代码评审完成"
+                gh_result = await create_pr_review(
+                    owner, repo, pull_number, pr.head_sha, review_body, gh_comments,
+                )
+                if gh_result:
+                    result.github_review_id = gh_result.get("id")
+                    logger.info(f"已同步 GitHub PR Review: ID={result.github_review_id}")
+    except Exception as e:
+        logger.error(f"GitHub PR Review 同步失败: {e}")
+
     # 邮件通知
     try:
         logger.info(f"正在发送邮件通知: {owner}/{repo}#{pull_number}")
@@ -208,6 +273,20 @@ async def run_review_pipeline(
         logger.info(f"邮件通知已发送: {owner}/{repo}#{pull_number}")
     except Exception as e:
         logger.error(f"邮件通知失败: {e}")
+
+    # 对比结果
+    if compare_reviews is not None:
+        compare_result = build_review_result(
+            pr_title=pr.title,
+            owner=owner, repo=repo, pull_number=pull_number,
+            files_changed=len(pr.files),
+            additions=pr.additions, deletions=pr.deletions,
+            file_reviews=compare_reviews,
+        )
+        yield {
+            "event": "compare_done",
+            "data": compare_result.model_dump_json(),
+        }
 
     yield {
         "event": "done",

@@ -1,4 +1,5 @@
 import json
+import uuid
 import aiosqlite
 
 DB_PATH = "reviews.db"
@@ -22,6 +23,7 @@ async def init_db():
                 risk_level      TEXT DEFAULT 'low',
                 issue_count     INTEGER DEFAULT 0,
                 suggestion_count INTEGER DEFAULT 0,
+                share_token     TEXT DEFAULT '',
                 result_json     TEXT NOT NULL,
                 created_at      TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
             )
@@ -96,14 +98,15 @@ async def init_db():
 
 async def save_review(pr_url: str, provider: str, model: str | None, result) -> int:
     await init_db()
+    share_token = uuid.uuid4().hex[:12]  # 12 位短 token
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
             """
             INSERT INTO reviews (
                 owner, repo, pull_number, pr_title, pr_url,
                 provider, model, files_changed, additions, deletions,
-                risk_level, issue_count, suggestion_count, result_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                risk_level, issue_count, suggestion_count, share_token, result_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 result.owner,
@@ -119,10 +122,12 @@ async def save_review(pr_url: str, provider: str, model: str | None, result) -> 
                 result.risk_level,
                 len(result.issues),
                 len(result.suggestions),
+                share_token,
                 result.model_dump_json(),
             ),
         )
         await db.commit()
+        result.share_token = share_token
         return cursor.lastrowid
 
 
@@ -165,6 +170,17 @@ async def get_review(review_id: int) -> dict | None:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT * FROM reviews WHERE id=?", (review_id,))
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def get_review_by_share_token(share_token: str) -> dict | None:
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM reviews WHERE share_token=?", (share_token,)
+        )
         row = await cursor.fetchone()
         return dict(row) if row else None
 

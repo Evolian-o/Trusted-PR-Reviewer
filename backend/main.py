@@ -39,6 +39,7 @@ from services.database import (
     update_custom_provider as db_update_custom_provider,
     delete_custom_provider as db_delete_custom_provider,
     get_repo_stats,
+    get_review_by_share_token,
 )
 from services.auth import (
     get_login_url, complete_auth, is_authenticated, clear_auth, get_user_info,
@@ -484,7 +485,7 @@ async def provider_test(name: str, data: dict | None = None):
     return {"ok": ok} if ok else {"ok": False, "error": "连接失败"}
 
 
-async def event_stream(pr_url: str, provider_name: str, model: str | None, dims: str | None):
+async def event_stream(pr_url: str, provider_name: str, model: str | None, dims: str | None, compare_model: str | None = None):
     """SSE 事件流 — 薄包装，委托给 ReviewOrchestrator"""
     from services.review_orchestrator import run_review_pipeline
 
@@ -498,6 +499,7 @@ async def event_stream(pr_url: str, provider_name: str, model: str | None, dims:
             token=get_token(),
             user_id=get_user_id() or 0,
             dimensions=dims.split(",") if dims else None,
+            compare_model=compare_model,
         ):
             yield event
     except ValueError as e:
@@ -514,8 +516,9 @@ async def review(
     provider: str = Query("deepseek", description="LLM Provider"),
     model: str | None = Query(None, description="模型名称"),
     dims: str | None = Query(None, description="评审维度 (逗号分隔: bug,security,performance,style)"),
+    compare_model: str | None = Query(None, description="对比模型名称"),
 ):
-    return EventSourceResponse(event_stream(url, provider, model, dims))
+    return EventSourceResponse(event_stream(url, provider, model, dims, compare_model))
 
 
 @app.get("/api/history")
@@ -542,6 +545,21 @@ async def history_delete(review_id: int):
     if not deleted:
         return {"error": "记录不存在"}, 404
     return {"status": "ok"}
+
+
+@app.get("/api/share/{token}")
+async def shared_review(token: str):
+    """公开分享的评审报告（无需认证）"""
+    row = await get_review_by_share_token(token)
+    if not row:
+        return {"error": "分享链接无效或已过期"}, 404
+    try:
+        result = json.loads(row["result_json"])
+    except (json.JSONDecodeError, TypeError):
+        return {"error": "数据损坏"}, 500
+    result["share_token"] = token
+    result["created_at"] = row.get("created_at", "")
+    return result
 
 
 @app.get("/api/history/stats")

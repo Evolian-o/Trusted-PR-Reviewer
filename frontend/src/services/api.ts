@@ -92,10 +92,13 @@ export function streamReview(
   onError: (error: string) => void,
   onModelInfo?: (info: { provider: string; model: string }) => void,
   onFileInfo?: (info: { filename: string; language: string; patch: string }) => void,
+  onCompareDone?: (result: ReviewResult) => void,
+  compareModel?: string | null,
 ): () => void {
   const params = new URLSearchParams({ url: prUrl, provider })
   if (model) params.set('model', model)
   if (dims) params.set('dims', dims)
+  if (compareModel) params.set('compare_model', compareModel)
 
   const url = `/api/review?${params.toString()}`
   console.log('[SSE] 连接:', url)
@@ -146,6 +149,16 @@ export function streamReview(
     console.log('[SSE] file_done:', e.data)
   })
 
+  es.addEventListener('compare_done', (e: MessageEvent) => {
+    console.log('[SSE] compare_done:', (e.data || '').slice(0, 100))
+    try {
+      const result = JSON.parse(e.data) as ReviewResult
+      onCompareDone?.(result)
+    } catch (err) {
+      console.error('[SSE] compare_done 解析失败:', e.data, err)
+    }
+  })
+
   es.addEventListener('done', (e: MessageEvent) => {
     console.log('[SSE] done:', e.data)
     try {
@@ -177,6 +190,14 @@ export function streamReview(
     console.log('[SSE] 关闭连接')
     close()
   }
+}
+
+export async function fetchSharedReview(token: string): Promise<ReviewResult> {
+  const resp = await fetch(`/api/share/${token}`)
+  if (!resp.ok) throw new Error('分享链接无效或已过期')
+  const data = await resp.json()
+  if (data.error) throw new Error(data.error)
+  return data as ReviewResult
 }
 
 export async function fetchRepoStats(owner: string, repo: string): Promise<TrendEntry[]> {

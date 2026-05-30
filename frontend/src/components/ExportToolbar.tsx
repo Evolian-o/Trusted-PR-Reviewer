@@ -60,6 +60,13 @@ export default function ExportToolbar({ result }: Props) {
     window.print()
   }
 
+  const handleCopyShareLink = () => {
+    if (result.share_token) {
+      const url = `${window.location.origin}/share/${result.share_token}`
+      navigator.clipboard.writeText(url)
+    }
+  }
+
   return (
     <div className="flex gap-3 flex-wrap no-print">
       <button
@@ -80,6 +87,14 @@ export default function ExportToolbar({ result }: Props) {
       >
         导出 PDF
       </button>
+      {result.share_token && (
+        <button
+          onClick={handleCopyShareLink}
+          className="px-4 py-2 bg-purple-700 text-white text-sm rounded-lg hover:bg-purple-600 transition-colors"
+        >
+          复制分享链接
+        </button>
+      )}
     </div>
   )
 }
