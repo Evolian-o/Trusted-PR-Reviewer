@@ -1,3 +1,5 @@
+import asyncio
+import json
 import os
 import time
 
@@ -66,7 +68,67 @@ def get_user_info() -> dict | None:
 
 def clear_auth() -> None:
     global _auth_state
+    uid = _auth_state.get("user_id", 0) if _auth_state else 0
     _auth_state = None
+
+    async def _clear():
+        from services.database import set_setting
+        if uid:
+            await set_setting(uid, "_auth_state_enc", "")
+            await set_setting(uid, "_auth_user_id", "")
+
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.create_task(_clear())
+    except RuntimeError:
+        pass
+
+
+async def _persist_auth() -> None:
+    """加密 auth state 写入 settings 表"""
+    from services.database import set_setting
+    from services.llm_providers.crypto import encrypt
+    if _auth_state is None:
+        return
+    payload = json.dumps(_auth_state, ensure_ascii=False)
+    encrypted = encrypt(payload)
+    uid = _auth_state.get("user_id", 0)
+    await set_setting(uid, "_auth_state_enc", encrypted)
+    await set_setting(uid, "_auth_user_id", str(uid))
+
+
+async def restore_auth() -> bool:
+    """启动时从 DB 恢复认证态，验证 token 有效性"""
+    global _auth_state
+    from services.database import get_setting, get_db
+    from services.llm_providers.crypto import decrypt
+
+    try:
+        db = await get_db()
+        cursor = await db.execute(
+            "SELECT user_id FROM settings WHERE key='_auth_user_id' LIMIT 1"
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return False
+
+        uid = int(row[0])
+        encrypted = await get_setting(uid, "_auth_state_enc", "")
+        if not encrypted:
+            return False
+
+        payload = decrypt(encrypted)
+        if not payload:
+            return False
+
+        _auth_state = json.loads(payload)
+        if await verify_token():
+            return True
+        _auth_state = None
+        return False
+    except Exception:
+        return False
 
 
 def _set_auth(token: str, user_info: dict) -> None:
@@ -78,6 +140,12 @@ def _set_auth(token: str, user_info: dict) -> None:
         "avatar_url": user_info.get("avatar_url", ""),
         "issued_at": time.time(),
     }
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.create_task(_persist_auth())
+    except RuntimeError:
+        pass
 
 
 def get_login_url() -> str:
