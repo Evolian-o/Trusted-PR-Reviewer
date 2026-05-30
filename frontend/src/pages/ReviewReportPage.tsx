@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { streamReview, fetchCachedReview, fetchRepoStats } from '../services/api'
-import type { ReviewPhase, ReviewProgress, ReviewResult, FileInfo, ModelInfo, TrendEntry } from '../types/review'
+import type { ReviewPhase, ReviewProgress, ReviewResult, FileInfo, FileReview, ModelInfo, TrendEntry } from '../types/review'
 import PRInfoBar from '../components/PRInfoBar'
 import ProgressIndicator from '../components/ProgressIndicator'
 import DiffViewer from '../components/DiffViewer'
@@ -15,6 +15,19 @@ const NAV_ITEMS = [
   { id: 'issues-summary', label: '问题汇总' },
   { id: 'export', label: '导出' },
 ]
+
+/** 从分片文件名推导原始文件名来匹配 patch
+ *  "main_(fn: process_data +1).py" → "main.py"
+ *  "utils (fn: validate_email)"   → "utils"
+ */
+function findPatch(patches: Map<string, FileInfo>, chunkName: string): FileInfo | undefined {
+  if (patches.has(chunkName)) return patches.get(chunkName)
+  // 尝试匹配 _(fn: ...) 或  (fn: ...) 形式的分片后缀
+  const m = chunkName.match(/[ _]\(fn:.*?\)(?=\.[^./]+$|$)/)
+  if (!m || m.index === undefined) return undefined
+  const base = chunkName.slice(0, m.index) + chunkName.slice(m.index + m[0].length)
+  return patches.get(base)
+}
 
 export default function ReviewReportPage() {
   const { owner, repo, pr } = useParams()
@@ -33,6 +46,7 @@ export default function ReviewReportPage() {
   const [showScrollTop, setShowScrollTop] = useState(false)
   const [activeNav, setActiveNav] = useState('overview')
   const [trend, setTrend] = useState<TrendEntry[]>([])
+  const [streamedFileReviews, setStreamedFileReviews] = useState<FileReview[]>([])
   const reviewSectionRef = useRef<HTMLDivElement>(null)
   const overviewRef = useRef<HTMLDivElement>(null)
   const codeReviewRef = useRef<HTMLDivElement>(null)
@@ -81,8 +95,15 @@ export default function ReviewReportPage() {
     setStatusMsg('正在加载历史评审...')
     try {
       const cached = await fetchCachedReview(id)
-      setResult(cached)
+      setResult(cached.result)
       if (provider) setModelInfo({ provider, model: model || provider })
+      if (cached.patches) {
+        const patchMap = new Map<string, FileInfo>()
+        for (const p of cached.patches) {
+          patchMap.set(p.filename, p)
+        }
+        setAllPatches(patchMap)
+      }
       setFromCache(true)
       setPhase('done')
     } catch (err: any) {
@@ -98,6 +119,7 @@ export default function ReviewReportPage() {
     }
 
     setPhase('loading')
+    setStreamedFileReviews([])
 
     const close = streamReview(
       prUrl,
@@ -132,6 +154,9 @@ export default function ReviewReportPage() {
           next.set(info.filename, info)
           return next
         })
+      },
+      (fr) => {
+        setStreamedFileReviews((prev) => [...prev, fr])
       },
       (compareR) => setCompareResult(compareR),
       compareModel,
@@ -282,6 +307,104 @@ export default function ReviewReportPage() {
                 <span>{streamingFileIdx}/{progress.total}</span>
               </div>
             )}
+
+            {/* 已完成的文件评审结果（增量渲染） */}
+            {streamedFileReviews.length > 0 && (
+              <div className="space-y-4 pt-2">
+                <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wide">
+                  已完成 ({streamedFileReviews.length})
+                </h3>
+                {streamedFileReviews.map((fr) => {
+                  const patch = findPatch(allPatches, fr.file)
+                  const isCollapsed = collapsedFiles.has(fr.file)
+                  const inlineIssues = new Map<number, typeof fr.issues>()
+                  const orphanIssues: typeof fr.issues = []
+                  for (const issue of fr.issues) {
+                    if (issue.line != null) {
+                      const arr = inlineIssues.get(issue.line)
+                      if (arr) arr.push(issue)
+                      else inlineIssues.set(issue.line, [issue])
+                    } else {
+                      orphanIssues.push(issue)
+                    }
+                  }
+
+                  return (
+                    <section key={fr.file} className="border border-gray-700 rounded-lg overflow-hidden opacity-90 hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => toggleCollapse(fr.file)}
+                        className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-800 hover:bg-gray-750 transition-colors text-left"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={`text-xs transition-transform ${isCollapsed ? '' : 'rotate-90'}`}>▶</span>
+                          <span className="text-sm font-mono text-green-400 truncate">{fr.file}</span>
+                          {fr.issues.length > 0 && (
+                            <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${
+                              fr.issues.some((i) => i.priority === 'must_fix')
+                                ? 'bg-red-700 text-red-100'
+                                : fr.issues.some((i) => i.severity === 'high' || i.severity === 'critical')
+                                  ? 'bg-orange-700 text-orange-100'
+                                  : 'bg-yellow-700 text-yellow-100'
+                            }`}>
+                              {fr.issues.length} 问题
+                            </span>
+                          )}
+                          {fr.issues.length === 0 && (
+                            <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-green-700 text-green-100">通过</span>
+                          )}
+                        </div>
+                      </button>
+
+                      {!isCollapsed && (
+                        <div className="p-1">
+                          {patch ? (
+                            <DiffViewer
+                              filename={patch.filename}
+                              language={patch.language}
+                              patch={patch.patch}
+                              inlineIssues={inlineIssues.size > 0 ? inlineIssues : undefined}
+                            />
+                          ) : (
+                            <div className="bg-gray-800 rounded p-4 m-1">
+                              <span className="text-green-400 font-mono text-sm">{fr.file}</span>
+                            </div>
+                          )}
+                          {orphanIssues.length > 0 && (
+                            <div className="mx-3 mb-2 pl-4 border-l-2 border-gray-700 space-y-2">
+                              {orphanIssues.map((issue, i) => {
+                                const sevBg: Record<string, string> = {
+                                  critical: 'border-red-500 bg-red-900/20',
+                                  high: 'border-orange-500 bg-orange-900/20',
+                                  medium: 'border-yellow-500 bg-yellow-900/20',
+                                  low: 'border-gray-500 bg-gray-800',
+                                }
+                                return (
+                                  <div key={i} className={`border-l-4 ${sevBg[issue.severity] || sevBg.low} rounded p-3`}>
+                                    <div className="flex items-center gap-2 mb-1.5">
+                                      <span className={`px-1.5 py-0.5 rounded text-xs font-bold text-white ${
+                                        issue.severity === 'critical' ? 'bg-red-600' :
+                                        issue.severity === 'high' ? 'bg-orange-600' :
+                                        issue.severity === 'medium' ? 'bg-yellow-600' : 'bg-gray-600'
+                                      }`}>
+                                        {issue.severity.toUpperCase()}
+                                      </span>
+                                      <span className="text-xs text-gray-500 bg-gray-700 px-1.5 py-0.5 rounded">
+                                        {issue.category}
+                                      </span>
+                                    </div>
+                                    <p className="text-gray-300 text-sm">{issue.description}</p>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </section>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -372,14 +495,14 @@ export default function ReviewReportPage() {
                       ({activeResult.file_reviews.length} 个文件)
                     </span>
                   </h2>
-                  {fromCache && (
+                  {fromCache && allPatches.size === 0 && (
                     <p className="text-xs text-gray-500 bg-gray-800 border border-gray-700 rounded px-3 py-2">
                       缓存数据不含 diff 补丁，仅展示评审结果。如需查看完整 diff，请点击「重新评审」。
                     </p>
                   )}
 
                   {activeResult.file_reviews.map((fr) => {
-                    const patch = allPatches.get(fr.file)
+                    const patch = findPatch(allPatches, fr.file)
                     const isCollapsed = collapsedFiles.has(fr.file)
                     const inlineIssues = new Map<number, typeof fr.issues>()
                     const orphanIssues: typeof fr.issues = []

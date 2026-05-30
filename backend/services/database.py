@@ -25,6 +25,7 @@ async def init_db():
                 suggestion_count INTEGER DEFAULT 0,
                 share_token     TEXT DEFAULT '',
                 result_json     TEXT NOT NULL,
+                patches_json    TEXT DEFAULT '',
                 created_at      TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
             )
         """)
@@ -34,6 +35,8 @@ async def init_db():
 
         # 迁移：旧表可能缺少 share_token 列
         await _migrate_add_column(db, "reviews", "share_token", "TEXT DEFAULT ''")
+        # 迁移：旧表可能缺少 patches_json 列
+        await _migrate_add_column(db, "reviews", "patches_json", "TEXT DEFAULT ''")
 
         await db.execute("""
             CREATE TABLE IF NOT EXISTS monitored_repos (
@@ -99,17 +102,18 @@ async def init_db():
         await db.commit()
 
 
-async def save_review(pr_url: str, provider: str, model: str | None, result) -> int:
+async def save_review(pr_url: str, provider: str, model: str | None, result, patches: list[dict] | None = None) -> int:
     await init_db()
     share_token = uuid.uuid4().hex[:12]  # 12 位短 token
+    patches_str = json.dumps(patches) if patches else ""
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
             """
             INSERT INTO reviews (
                 owner, repo, pull_number, pr_title, pr_url,
                 provider, model, files_changed, additions, deletions,
-                risk_level, issue_count, suggestion_count, share_token, result_json, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))
+                risk_level, issue_count, suggestion_count, share_token, result_json, patches_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))
             """,
             (
                 result.owner,
@@ -127,6 +131,7 @@ async def save_review(pr_url: str, provider: str, model: str | None, result) -> 
                 len(result.suggestions),
                 share_token,
                 result.model_dump_json(),
+                patches_str,
             ),
         )
         await db.commit()

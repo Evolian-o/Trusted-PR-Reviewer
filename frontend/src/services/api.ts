@@ -1,4 +1,4 @@
-import type { ReviewProgress, ReviewResult, ProviderInfo, CustomProviderInput, TrendEntry } from '../types/review'
+import type { ReviewProgress, ReviewResult, FileReview, ProviderInfo, CustomProviderInput, TrendEntry } from '../types/review'
 
 export async function checkAuthStatus(): Promise<{
   authenticated: boolean
@@ -73,11 +73,18 @@ export async function testProviderConnection(name: string, data?: CustomProvider
   return resp.json()
 }
 
-export async function fetchCachedReview(reviewId: number): Promise<ReviewResult> {
+export async function fetchCachedReview(reviewId: number): Promise<{ result: ReviewResult; patches: FileInfo[] | null }> {
   const resp = await fetch(`/api/history/${reviewId}`)
   const data = await resp.json()
   if (data.error) throw new Error(data.error)
-  return JSON.parse(data.result_json) as ReviewResult
+  const result = JSON.parse(data.result_json) as ReviewResult
+  let patches: FileInfo[] | null = null
+  if (data.patches_json) {
+    try {
+      patches = JSON.parse(data.patches_json) as FileInfo[]
+    } catch { /* ignore */ }
+  }
+  return { result, patches }
 }
 
 export function streamReview(
@@ -92,6 +99,7 @@ export function streamReview(
   onError: (error: string) => void,
   onModelInfo?: (info: { provider: string; model: string }) => void,
   onFileInfo?: (info: { filename: string; language: string; patch: string }) => void,
+  onFileDone?: (fr: FileReview, progress: string) => void,
   onCompareDone?: (result: ReviewResult) => void,
   compareModel?: string | null,
 ): () => void {
@@ -146,7 +154,15 @@ export function streamReview(
   })
 
   es.addEventListener('file_done', (e: MessageEvent) => {
-    console.log('[SSE] file_done:', e.data)
+    console.log('[SSE] file_done:', (e.data || '').slice(0, 80))
+    try {
+      const data = JSON.parse(e.data)
+      if (data.file_review && onFileDone) {
+        onFileDone(data.file_review as FileReview, data.progress || '')
+      }
+    } catch (err) {
+      console.warn('[SSE] file_done 解析失败:', e.data, err)
+    }
   })
 
   es.addEventListener('compare_done', (e: MessageEvent) => {

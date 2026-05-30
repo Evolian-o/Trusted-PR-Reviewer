@@ -156,12 +156,20 @@ async def run_review_pipeline(
             yield {"event": "review_error", "data": f"LLM 调用失败 [{fc.filename}]: {msg}"}
             # 安全审查成功但常规失败 — 至少保留安全 issue
             if security_issues:
-                file_reviews.append(FileReview(
+                fr = FileReview(
                     file=fc.filename,
                     summary="(常规评审失败，仅保留安全审查结果)",
                     issues=security_issues,
                     suggestions=[],
-                ))
+                )
+                file_reviews.append(fr)
+                yield {
+                    "event": "file_done",
+                    "data": json.dumps({
+                        "file_review": fr.model_dump(mode="json"),
+                        "progress": f"{idx}/{len(chunks)}",
+                    }),
+                }
             continue
 
         try:
@@ -181,8 +189,7 @@ async def run_review_pipeline(
         yield {
             "event": "file_done",
             "data": json.dumps({
-                "file": fc.filename,
-                "issues_count": len(all_issues),
+                "file_review": file_reviews[-1].model_dump(mode="json"),
                 "progress": f"{idx}/{len(chunks)}",
             }),
         }
@@ -236,7 +243,8 @@ async def run_review_pipeline(
 
     # 持久化保存
     try:
-        review_id = await save_review(pr_url, provider_name, model, result)
+        patches = [fc.model_dump(mode="json") for fc in pr.files]
+        review_id = await save_review(pr_url, provider_name, model, result, patches=patches)
         logger.info(f"评审已保存: ID={review_id} provider={provider_name} model={model}")
     except Exception as e:
         logger.error(f"保存评审记录失败: {e}")
