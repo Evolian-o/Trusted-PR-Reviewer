@@ -62,6 +62,8 @@ export default function ReviewReportPage() {
   const [fromCache, setFromCache] = useState(false)
   const [compareResult, setCompareResult] = useState<ReviewResult | null>(null)
   const [viewMode, setViewMode] = useState<'primary' | 'compare'>('primary')
+  const [merging, setMerging] = useState(false)
+  const [mergeResult, setMergeResult] = useState<{ ok: boolean; message: string } | null>(null)
   const activeResult = viewMode === 'compare' && compareResult ? compareResult : result
 
   const isDone = phase === 'done' && result
@@ -208,6 +210,31 @@ export default function ReviewReportPage() {
     }, 60)
   }
 
+  const handleMerge = async () => {
+    if (!owner || !repo || !pr) return
+    if (!window.confirm(`确定要合并 ${owner}/${repo}#${pr} 吗？`)) return
+    setMerging(true)
+    setMergeResult(null)
+    try {
+      const resp = await fetch(`/api/repos/${owner}/${repo}/pulls/${pr}/merge`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ merge_method: 'merge' }),
+      })
+      const data = await resp.json()
+      if (resp.ok) {
+        setMergeResult({ ok: true, message: data.message || '合并成功' })
+      } else {
+        setMergeResult({ ok: false, message: data.error || '合并失败' })
+      }
+    } catch {
+      setMergeResult({ ok: false, message: '网络错误，请重试' })
+    } finally {
+      setMerging(false)
+    }
+  }
+
   const scrollTo = (id: string) => {
     const el = document.getElementById(id)
     el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -347,8 +374,22 @@ export default function ReviewReportPage() {
             >
               在 GitHub 查看 &rarr;
             </a>
+            <button
+              onClick={handleMerge}
+              disabled={merging}
+              className="text-sm px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-lg transition-colors disabled:opacity-50"
+            >
+              {merging ? '合并中...' : '合并 PR'}
+            </button>
           </div>
         </div>
+        {mergeResult && (
+          <div className={`mt-3 px-4 py-2 rounded-lg text-sm ${
+            mergeResult.ok ? 'bg-green-900/40 text-green-300 border border-green-700' : 'bg-red-900/40 text-red-300 border border-red-700'
+          }`}>
+            {mergeResult.message}
+          </div>
+        )}
 
         {/* Loading */}
         {(phase === 'loading' || phase === 'idle') && (

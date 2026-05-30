@@ -44,6 +44,9 @@ export default function DashboardPage() {
   const [recentReviews, setRecentReviews] = useState<HistoryItem[]>([])
   const [search, setSearch] = useState('')
   const [reposLoading, setReposLoading] = useState(false)
+  const [manualRepo, setManualRepo] = useState('')
+  const [manualError, setManualError] = useState('')
+  const [manualAdding, setManualAdding] = useState(false)
   const [schedulerStatus, setSchedulerStatus] = useState<{
     running: boolean
     monitored_repos: number
@@ -115,6 +118,40 @@ export default function DashboardPage() {
     }
   }
 
+  const handleAddManualRepo = async () => {
+    const trimmed = manualRepo.trim()
+    if (!trimmed) {
+      setManualError('请输入仓库名')
+      return
+    }
+    const parts = trimmed.split('/')
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+      setManualError('格式不正确，示例: facebook/react')
+      return
+    }
+    const [owner, repo] = parts
+    setManualAdding(true)
+    setManualError('')
+    try {
+      const resp = await fetch('/api/monitor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ owner, repo: repo.replace('.git', '') }),
+      })
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: '添加失败' }))
+        throw new Error(err.error || '添加失败')
+      }
+      setManualRepo('')
+      loadData()
+    } catch (e) {
+      setManualError(e instanceof Error ? e.message : '添加失败')
+    } finally {
+      setManualAdding(false)
+    }
+  }
+
   const handleLogout = async () => {
     await logout()
     navigate('/', { replace: true })
@@ -179,6 +216,24 @@ export default function DashboardPage() {
                 已监控 {monitored.length} 个仓库
               </span>
             </div>
+            <div className="flex items-center gap-2 mb-3">
+              <input
+                type="text"
+                value={manualRepo}
+                onChange={(e) => { setManualRepo(e.target.value); setManualError('') }}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAddManualRepo() }}
+                placeholder="手动添加: owner/repo (如 facebook/react)"
+                className="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <button
+                onClick={handleAddManualRepo}
+                disabled={manualAdding}
+                className="px-4 py-2 bg-green-700 hover:bg-green-600 text-white text-sm rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
+              >
+                {manualAdding ? '...' : '添加监控'}
+              </button>
+            </div>
+            {manualError && <p className="text-red-400 text-xs -mt-2 mb-3">{manualError}</p>}
             <RepoList
               repos={repos}
               loading={reposLoading}
@@ -187,6 +242,33 @@ export default function DashboardPage() {
               monitoredSet={monitoredSet}
               onToggleMonitor={toggleMonitor}
             />
+
+            {/* 手动添加的外部仓库（不在自己 GitHub 仓库列表中） */}
+            {monitored.filter((m) => !repos.some((r) => `${r.owner}/${r.repo}` === `${m.owner}/${m.repo}`)).length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-sm font-semibold text-gray-400 mb-2 uppercase tracking-wide">
+                  手动添加的仓库 · <span className="font-normal text-gray-500">外部</span>
+                </h3>
+                <div className="space-y-1">
+                  {monitored
+                    .filter((m) => !repos.some((r) => `${r.owner}/${r.repo}` === `${m.owner}/${m.repo}`))
+                    .map((m) => (
+                      <div
+                        key={m.id}
+                        className="flex items-center justify-between px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg"
+                      >
+                        <span className="text-white text-sm">{m.owner}/{m.repo}</span>
+                        <button
+                          onClick={() => toggleMonitor(m.owner, m.repo)}
+                          className="px-3 py-1 text-xs rounded bg-red-900/40 text-red-400 hover:bg-red-900/60 transition-colors"
+                        >
+                          取消监控
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="w-80 flex-shrink-0">

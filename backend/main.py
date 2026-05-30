@@ -20,6 +20,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"), override=True)
 from fastapi import FastAPI, Query, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, JSONResponse
+from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
 from services.llm_providers.factory import (
@@ -49,6 +50,7 @@ from services.auth import (
 )
 from services.auth_middleware import require_auth, optional_auth
 from services.scheduler import start_scheduler, stop_scheduler, get_scheduler_status, restore_all_schedulers
+from services.github_client import check_repo_exists, merge_pr
 
 # 评审端点频率限制: 每分钟最多 10 次
 _review_limiter = RateLimiter(max_requests=10, window_seconds=60)
@@ -203,6 +205,8 @@ async def monitor_add(data: dict, auth: AuthInfo = Depends(require_auth)):
     repo = data.get("repo", "")
     if not owner or not repo:
         return JSONResponse(content={"error": "缺少 owner 或 repo"}, status_code=400)
+    if not await check_repo_exists(owner, repo, token=auth.github_token):
+        return JSONResponse(content={"error": f"仓库 {owner}/{repo} 不存在或无权访问"}, status_code=404)
     await add_monitored_repo(auth.user_id, owner, repo)
     return {"status": "ok"}
 
@@ -289,6 +293,29 @@ async def repo_create_pr(owner: str, repo: str, data: dict, auth: AuthInfo = Dep
         if resp.status_code >= 400:
             return JSONResponse(content={"error": pr.get("message", "创建 PR 失败")}, status_code=resp.status_code)
         return {"number": pr["number"], "html_url": pr["html_url"], "title": pr["title"]}
+
+
+class MergeBody(BaseModel):
+    merge_method: str = "merge"
+
+
+@app.post("/api/repos/{owner}/{repo}/pulls/{pull_number}/merge")
+async def repo_merge_pr(owner: str, repo: str, pull_number: int, body: MergeBody, auth: AuthInfo = Depends(require_auth)):
+    """合并 PR — merge_method: merge / squash / rebase"""
+    merge_method = body.merge_method
+    if merge_method not in ("merge", "squash", "rebase"):
+        return JSONResponse(content={"error": "merge_method 必须是 merge / squash / rebase"}, status_code=400)
+    result = await merge_pr(owner, repo, pull_number, token=auth.github_token, merge_method=merge_method)
+    if result["merged"]:
+        return {"status": "ok", "message": result.get("message", "合并成功")}
+    reason = result.get("reason", "未知错误")
+    if "not found" in reason.lower():
+        return JSONResponse(content={"error": reason}, status_code=404)
+    if "permission" in reason.lower() or "forbidden" in reason.lower():
+        return JSONResponse(content={"error": reason}, status_code=403)
+    if "conflict" in reason.lower() or "not mergeable" in reason.lower():
+        return JSONResponse(content={"error": reason}, status_code=409)
+    return JSONResponse(content={"error": reason}, status_code=422)
 
 
 @app.get("/api/providers")

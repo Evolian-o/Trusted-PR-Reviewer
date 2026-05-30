@@ -78,8 +78,8 @@ export default function PRInfoBar({ result }: { result: ReviewResult }) {
           </p>
           <div className="flex items-center gap-4 text-sm mt-2 flex-wrap">
             <span className="text-gray-300">{result.files_changed} 个文件</span>
-            <span className="text-green-400">+{result.additions}</span>
-            <span className="text-red-400">-{result.deletions}</span>
+            <span className="text-green-400">+{result.additions} <span className="text-gray-500">行新增</span></span>
+            <span className="text-red-400">-{result.deletions} <span className="text-gray-500">行删除</span></span>
             <span className={`px-3 py-1 rounded-full text-xs font-bold text-white ${RISK_COLORS[result.risk_level] || 'bg-gray-600'}`}>
               {result.risk_level === 'high' ? '高风险' :
                result.risk_level === 'medium' ? '中风险' : '低风险'}
