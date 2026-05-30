@@ -84,8 +84,9 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                             choices = chunk.get("choices", [])
                             if choices:
                                 delta = choices[0].get("delta", {})
-                                if "content" in delta:
-                                    yield delta["content"]
+                                content = delta.get("content")
+                                if content:
+                                    yield content
                         except json.JSONDecodeError:
                             continue
         except asyncio.TimeoutError:

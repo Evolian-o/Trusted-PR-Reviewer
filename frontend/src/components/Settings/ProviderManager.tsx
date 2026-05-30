@@ -33,7 +33,7 @@ export default function ProviderManager({ providers, onProvidersChanged }: Props
 
   const openAddDialog = () => setDialog({ ...EMPTY_DIALOG, open: true })
   const openEditDialog = (p: ProviderInfo) => {
-    setDialog({ ...EMPTY_DIALOG, open: true, edit: true, name: p.name, display_name: p.display_name, default_model: p.default_model })
+    setDialog({ ...EMPTY_DIALOG, open: true, edit: true, name: p.name, display_name: p.display_name, base_url: p.base_url || '', default_model: p.default_model })
   }
   const closeDialog = () => { setDialog(EMPTY_DIALOG); setDialogError(null) }
 

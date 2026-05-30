@@ -80,6 +80,7 @@ export interface ProviderInfo {
   default_model: string
   models: string[]
   needs_config: boolean
+  base_url?: string
 }
 
 export interface CustomProviderInput {

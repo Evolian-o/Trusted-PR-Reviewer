@@ -152,6 +152,7 @@ def list_providers_with_meta() -> list[dict]:
                 "is_builtin": False,
                 "is_enabled": True,
                 "default_model": getattr(p, "default_model", ""),
+                "base_url": getattr(p, "base_url", ""),
                 "needs_config": False,
                 "models": [],
             })
