@@ -51,6 +51,7 @@ export default function ReviewReportPage() {
   const overviewRef = useRef<HTMLDivElement>(null)
   const codeReviewRef = useRef<HTMLDivElement>(null)
   const exportRef = useRef<HTMLDivElement>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const prUrl = `https://github.com/${owner}/${repo}/pull/${pr}`
   const provider = searchParams.get('provider') || 'deepseek'
@@ -62,6 +63,9 @@ export default function ReviewReportPage() {
   const [compareResult, setCompareResult] = useState<ReviewResult | null>(null)
   const [viewMode, setViewMode] = useState<'primary' | 'compare'>('primary')
   const activeResult = viewMode === 'compare' && compareResult ? compareResult : result
+
+  const isDone = phase === 'done' && result
+  const filesForNav = activeResult?.file_reviews || result?.file_reviews || []
 
   // 监听滚动：FAB 可见性 + 导航高亮
   useEffect(() => {
@@ -178,11 +182,30 @@ export default function ReviewReportPage() {
 
   const toggleCollapse = (filename: string) => {
     setCollapsedFiles((prev) => {
-      const next = new Set(prev)
-      if (next.has(filename)) next.delete(filename)
-      else next.add(filename)
+      const wasOpen = !prev.has(filename)
+      if (wasOpen) {
+        // 手风琴模式：展开当前，折叠其余
+        const allFiles = filesForNav.map(fr => fr.file)
+        const next = new Set(allFiles)
+        next.delete(filename)
+        return next
+      } else {
+        return new Set([...prev, filename])
+      }
+    })
+  }
+
+  const scrollToFile = (filename: string) => {
+    // 先展开目标文件
+    setCollapsedFiles((prev) => {
+      const allFiles = filesForNav.map(fr => fr.file)
+      const next = new Set(allFiles)
+      next.delete(filename)
       return next
     })
+    setTimeout(() => {
+      document.getElementById(`file-${filename}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 60)
   }
 
   const scrollTo = (id: string) => {
@@ -191,8 +214,99 @@ export default function ReviewReportPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 py-8 px-4">
-      <div className="max-w-5xl mx-auto space-y-6">
+    <div className={`min-h-screen bg-gray-900 ${isDone ? 'md:pl-56' : 'py-8 px-4'}`}>
+      {isDone && (
+        <aside className={`fixed left-0 top-0 h-full w-56 bg-gray-900 border-r border-gray-700/50 z-40 flex flex-col shadow-xl shadow-black/30 transition-transform duration-200 ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        } md:translate-x-0`}>
+          <div className="p-4 border-b border-gray-700/50">
+            <h2 className="text-sm font-bold text-gray-200 flex items-center gap-2">
+              <span className="w-2 h-2 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full" />
+              审查导航
+            </h2>
+          </div>
+
+          <nav className="flex-1 overflow-y-auto p-3 space-y-1">
+            {NAV_ITEMS.map((item) => {
+              const isCodeReview = item.id === 'code-review'
+              return (
+                <div key={item.id}>
+                  <button
+                    onClick={() => {
+                      if (item.id === 'code-review') {
+                        document.getElementById('code-review')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                      } else {
+                        scrollTo(item.id)
+                      }
+                    }}
+                    className={`w-full text-left px-3 py-2 rounded text-sm transition-colors flex items-center gap-2 border-l-2 ${
+                      activeNav === item.id
+                        ? 'bg-gradient-to-r from-blue-600/30 to-indigo-600/30 text-blue-300 border-blue-400'
+                        : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800/50 border-transparent'
+                    }`}
+                  >
+                    <span className="text-[10px] opacity-50">
+                      {item.id === 'overview' && '●'}
+                      {item.id === 'code-review' && '●'}
+                      {item.id === 'issues-summary' && '●'}
+                      {item.id === 'export' && '●'}
+                    </span>
+                    {item.label}
+                  </button>
+
+                  {isCodeReview && filesForNav.length > 0 && (
+                    <div className="ml-5 mt-0.5 space-y-0.5 max-h-72 overflow-y-auto">
+                      {filesForNav.map((fr) => (
+                        <button
+                          key={fr.file}
+                          onClick={() => scrollToFile(fr.file)}
+                          className="w-full text-left px-2 py-1 rounded text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800/50 truncate flex items-center gap-1.5"
+                          title={fr.file}
+                        >
+                          <span className={`w-1 h-1 rounded-full flex-shrink-0 ${
+                            fr.issues.length === 0 ? 'bg-green-500' :
+                            fr.issues.some(i => i.priority === 'must_fix') ? 'bg-red-500' :
+                            fr.issues.some(i => i.severity === 'high' || i.severity === 'critical') ? 'bg-orange-500' :
+                            'bg-yellow-500'
+                          }`} />
+                          <span className="truncate">{fr.file.split('/').pop() || fr.file}</span>
+                          {fr.issues.length > 0 && (
+                            <span className="text-gray-600 flex-shrink-0 ml-auto">{fr.issues.length}</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </nav>
+
+          <div className="p-3 border-t border-gray-700/50">
+            <button
+              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+              className="w-full text-left px-3 py-1.5 rounded text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800/50 transition-colors"
+            >
+              ↑ 回到顶部
+            </button>
+          </div>
+        </aside>
+      )}
+
+      {/* 移动端：侧边栏遮罩 + 汉堡按钮 */}
+      {isDone && sidebarOpen && (
+        <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={() => setSidebarOpen(false)} />
+      )}
+      {isDone && (
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="fixed top-3 left-3 z-50 w-8 h-8 bg-gray-800 border border-gray-600 rounded flex items-center justify-center text-gray-400 hover:text-gray-200 md:hidden"
+        >
+          {sidebarOpen ? '✕' : '☰'}
+        </button>
+      )}
+
+      <div className={`max-w-5xl mx-auto space-y-6 ${isDone ? 'py-8 px-4' : ''}`}>
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -330,7 +444,7 @@ export default function ReviewReportPage() {
                   }
 
                   return (
-                    <section key={fr.file} className="border border-gray-700 rounded-lg overflow-hidden opacity-90 hover:opacity-100 transition-opacity">
+                    <section key={fr.file} id={`file-${fr.file}`} className="border border-gray-700 rounded-lg overflow-hidden opacity-90 hover:opacity-100 transition-opacity scroll-mt-20">
                       <button
                         onClick={() => toggleCollapse(fr.file)}
                         className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-800 hover:bg-gray-750 transition-colors text-left"
@@ -411,24 +525,6 @@ export default function ReviewReportPage() {
         {/* Done: 完整报告 */}
         {phase === 'done' && result && (
           <>
-            {/* 粘性导航栏 */}
-            <nav className="sticky top-0 z-30 -mx-4 px-4 bg-gray-900/95 backdrop-blur border-b border-gray-700/50 py-2.5 flex items-center gap-1 overflow-x-auto"
-              style={{ borderImage: 'linear-gradient(90deg, #6366f1, #8b5cf6, transparent) 1' }}>
-              {NAV_ITEMS.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => scrollTo(item.id)}
-                  className={`px-3 py-1.5 rounded text-sm whitespace-nowrap transition-colors ${
-                    activeNav === item.id
-                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-600/25'
-                      : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </nav>
-
             <div className="space-y-6">
               {/* 多模型对比 Tab */}
               {compareResult && (
@@ -517,7 +613,7 @@ export default function ReviewReportPage() {
                     }
 
                     return (
-                      <section key={fr.file} className="border border-gray-700 rounded-lg overflow-hidden">
+                      <section key={fr.file} id={`file-${fr.file}`} className="border border-gray-700 rounded-lg overflow-hidden scroll-mt-20">
                         {/* 文件头：可折叠 */}
                         <button
                           onClick={() => toggleCollapse(fr.file)}
