@@ -1,10 +1,10 @@
-"""智能分片模块 — AST → 正则 → 行级逐级退化"""
+"""智能分片模块 — AST(per_function/merge) → 正则 → 行级逐级退化"""
 
 from models.review import PRInfo, FileChange
 from services.chunking.registry import (
     get_parser, get_node_types, get_regex, normalize_language,
 )
-from services.chunking.ast_chunker import chunk_by_ast
+from services.chunking.ast_chunker import chunk_by_ast, chunk_per_function
 from services.chunking.regex_chunker import chunk_by_regex
 from services.github_adapter import fetch_file_content
 from services.diff_parser import filter_patch, split_large_file
@@ -62,7 +62,22 @@ async def _chunk_one_file(
     """单个文件的三级退化分片"""
     lang = normalize_language(fc.language)
 
-    # Level 1: AST (tree-sitter)
+    # Level 1: AST 逐函数（per_function 策略 — 每个函数/方法独立评审）
+    if strategy == "per_function":
+        parser = get_parser(lang)
+        if parser is not None and pr.head_sha:
+            full_content = await fetch_file_content(
+                pr.owner, pr.repo, pr.head_sha, fc.filename, token=token,
+            )
+            if full_content:
+                node_types = get_node_types(lang)
+                if node_types:
+                    result = chunk_per_function(fc, full_content, parser, node_types)
+                    if result:
+                        return _apply_line_fallback(result, fallback_max_lines)
+        # 用户强制 per_function 但 AST 不可用 — 回退到不拆分，保留原始文件
+
+    # Level 2: AST 合并模式（auto/ast — 同属一个类的函数合并为一个 chunk）
     if strategy in ("auto", "ast"):
         parser = get_parser(lang)
         if parser is not None and pr.head_sha:
@@ -82,7 +97,7 @@ async def _chunk_one_file(
         if strategy == "ast":
             pass  # 用户强制 AST 但失败了 — 回退到不拆分
 
-    # Level 2: 正则
+    # Level 3: 正则
     if strategy in ("auto", "regex"):
         pattern = get_regex(lang)
         if pattern:

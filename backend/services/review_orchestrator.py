@@ -5,7 +5,7 @@ import logging
 
 from services.github_adapter import parse_pr_url, fetch_pr
 from services.chunking import chunk_pr as smart_chunk_pr
-from services.prompt_builder import build_system_prompt, build_user_prompt
+from services.prompt_builder import build_system_prompt, build_security_prompt, build_user_prompt
 from services.llm_providers.base import ReviewPrompt
 from services.llm_providers.factory import get_provider, load_custom_providers
 from services.result_formatter import parse_llm_output, build_review_result
@@ -87,7 +87,7 @@ async def run_review_pipeline(
         "data": json.dumps({"provider": provider_name, "model": actual_model}),
     }
 
-    # Step 5: 逐个评审
+    # Step 5: 两阶段逐片段评审（安全审查 → 常规评审）
     file_reviews: list[FileReview] = []
     for idx, fc in enumerate(chunks, start=1):
         yield {
@@ -98,10 +98,14 @@ async def run_review_pipeline(
                 "patch": fc.patch or "",
             }),
         }
+
+        user_prompt = build_user_prompt(pr, fc)
+
+        # ── Phase 1: 安全审查 ──
         yield {
             "event": "progress",
             "data": json.dumps({
-                "phase": "reviewing",
+                "phase": "reviewing_security",
                 "current": idx,
                 "total": len(chunks),
                 "file": fc.filename,
@@ -109,26 +113,62 @@ async def run_review_pipeline(
             }),
         }
 
-        user_prompt = build_user_prompt(pr, fc)
-        prompt = ReviewPrompt(system=build_system_prompt(dimensions), user=user_prompt)
+        security_issues: list = []
+        try:
+            sec_prompt = ReviewPrompt(system=build_security_prompt(), user=user_prompt)
+            sec_text = ""
+            async for token_text in provider.review(sec_prompt, model=model):
+                sec_text += token_text
+                yield {"event": "token", "data": token_text}
+                await asyncio.sleep(0)
+            _, security_issues, _ = parse_llm_output(sec_text, fc.filename)
+            # 安全检查的 issues 统一标记为 security 类别
+            for si in security_issues:
+                if si.category not in ("bug", "security", "performance", "style"):
+                    si.category = "security"
+        except Exception as e:
+            msg = str(e).strip() or f"{type(e).__name__}(无详细错误信息)"
+            yield {"event": "review_error", "data": f"安全检查失败 [{fc.filename}]: {msg}"}
+
+        # ── Phase 2: 常规评审（Bug/性能/规范）──
+        yield {
+            "event": "progress",
+            "data": json.dumps({
+                "phase": "reviewing_normal",
+                "current": idx,
+                "total": len(chunks),
+                "file": fc.filename,
+                "language": fc.language,
+            }),
+        }
 
         full_text = ""
         try:
-            async for token_text in provider.review(prompt, model=model):
+            normal_prompt = ReviewPrompt(system=build_system_prompt(dimensions), user=user_prompt)
+            async for token_text in provider.review(normal_prompt, model=model):
                 full_text += token_text
                 yield {"event": "token", "data": token_text}
                 await asyncio.sleep(0)
         except Exception as e:
             msg = str(e).strip() or f"{type(e).__name__}(无详细错误信息)"
             yield {"event": "review_error", "data": f"LLM 调用失败 [{fc.filename}]: {msg}"}
+            # 安全审查成功但常规失败 — 至少保留安全 issue
+            if security_issues:
+                file_reviews.append(FileReview(
+                    file=fc.filename,
+                    summary="(常规评审失败，仅保留安全审查结果)",
+                    issues=security_issues,
+                    suggestions=[],
+                ))
             continue
 
         try:
             summary, issues, suggestions = parse_llm_output(full_text, fc.filename)
+            all_issues = security_issues + list(issues)
             file_reviews.append(FileReview(
                 file=fc.filename,
                 summary=summary,
-                issues=issues,
+                issues=all_issues,
                 suggestions=suggestions,
             ))
         except Exception as e:
@@ -139,7 +179,7 @@ async def run_review_pipeline(
             "event": "file_done",
             "data": json.dumps({
                 "file": fc.filename,
-                "issues_count": len(issues),
+                "issues_count": len(all_issues),
                 "progress": f"{idx}/{len(chunks)}",
             }),
         }

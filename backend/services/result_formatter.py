@@ -115,8 +115,24 @@ def _normalize_issues(raw_data: list[dict], filename: str) -> list[Issue]:
             category=_sanitize_category(item.get("category", "style")),
             description=str(item.get("description", "")),
             suggestion=str(item.get("suggestion", "")),
+            current_code=str(item.get("current_code", "")),
+            proposed_code=str(item.get("proposed_code", "")),
+            confidence=_clamp_confidence(item.get("confidence", 0)),
+            priority=_sanitize_priority(item.get("priority", "should_fix")),
         ))
     return issues
+
+
+def _clamp_confidence(val) -> int:
+    try:
+        return max(0, min(100, int(val)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _sanitize_priority(raw: str) -> str:
+    raw = (raw or "").lower().strip()
+    return raw if raw in ("must_fix", "should_fix", "nice_to_fix") else "should_fix"
 
 
 def determine_risk_level(issues: list[Issue]) -> str:

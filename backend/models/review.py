@@ -30,6 +30,12 @@ class Issue(BaseModel):
     category: str  # bug | security | performance | style
     description: str
     suggestion: str = ""
+    # 1.2: 建议具体化 — LLM 输出 current/proposed 代码对比
+    current_code: str = ""   # 当前有问题的代码片段
+    proposed_code: str = ""  # 建议修改后的代码片段
+    # 1.3: 置信度 + 优先级
+    confidence: int = 0   # LLM 自评置信度 0-100
+    priority: str = "should_fix"  # must_fix | should_fix | nice_to_fix
 
 
 class FileReview(BaseModel):
@@ -52,3 +58,9 @@ class ReviewResult(BaseModel):
     file_reviews: list[FileReview] = []
     issues: list[Issue] = []
     suggestions: list[str] = []
+    # 3.1: 量化评分
+    scores: dict = {}  # { overall, security, bug, performance, style } 0-100
+    # 4.1: 分享
+    share_token: str = ""
+    # 4.3: GitHub PR Review 回写
+    github_review_id: int | None = None

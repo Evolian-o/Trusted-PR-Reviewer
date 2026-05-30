@@ -5,6 +5,10 @@ export interface Issue {
   category: 'bug' | 'security' | 'performance' | 'style'
   description: string
   suggestion: string
+  current_code: string
+  proposed_code: string
+  confidence: number
+  priority: 'must_fix' | 'should_fix' | 'nice_to_fix'
 }
 
 export interface FileReview {
@@ -27,6 +31,9 @@ export interface ReviewResult {
   file_reviews: FileReview[]
   issues: Issue[]
   suggestions: string[]
+  scores: Record<string, number>
+  share_token: string
+  github_review_id: number | null
 }
 
 export interface ReviewProgress {

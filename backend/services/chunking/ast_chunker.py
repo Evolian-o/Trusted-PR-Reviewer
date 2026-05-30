@@ -193,3 +193,30 @@ def chunk_by_ast(
         groups.append(current)
 
     return [_build_chunk(file, g, source_bytes, all_nodes) for g in groups]
+
+
+def chunk_per_function(
+    file: FileChange,
+    full_content: str,
+    parser,
+    node_types: list[str],
+) -> list[FileChange]:
+    """每个函数/方法/类独立成一个 chunk（不合并）"""
+    source_bytes = full_content.encode()
+    diff_ranges = parse_diff_ranges(file.patch or "")
+    touched = find_touched_nodes(source_bytes, parser, node_types, diff_ranges)
+
+    if not touched:
+        return [FileChange(
+            filename=file.filename,
+            status=file.status,
+            patch=file.patch,
+            additions=file.additions,
+            deletions=file.deletions,
+            language=file.language,
+            context_hint="",
+        )]
+
+    all_nodes = extract_function_nodes(source_bytes, parser, node_types)
+    touched.sort(key=lambda n: n["start_line"])
+    return [_build_chunk(file, [node], source_bytes, all_nodes) for node in touched]
