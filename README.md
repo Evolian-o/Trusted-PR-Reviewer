@@ -69,3 +69,10 @@ frontend/
 │   └── types/           # TypeScript 类型定义
 └── dist/                # 构建输出
 ```
+
+## 开发约定
+
+- 从 main 切 feature 分支开发，不直接在 main 上提交
+- 提交前运行 `cd backend && python -m pytest tests/ -v`（全绿）和 `cd frontend && npx tsc --noEmit`（零错误）
+- 合并前建 PR 审查
+- main 分支保持可部署状态
