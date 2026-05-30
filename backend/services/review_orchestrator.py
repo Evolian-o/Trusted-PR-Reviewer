@@ -81,7 +81,7 @@ async def run_review_pipeline(
     yield {"event": "status", "data": f"分片完成，共 {len(chunks)} 个片段待评审"}
 
     # Step 4: 获取 Provider
-    provider = get_provider(provider_name)
+    provider = get_provider(provider_name, user_id=user_id)
     actual_model = model or provider.default_model
     logger.info(f"提供商={provider_name}  模型={actual_model}")
     yield {
@@ -198,7 +198,7 @@ async def run_review_pipeline(
     compare_reviews: list[FileReview] | None = None
     if compare_model:
         compare_reviews = []
-        compare_provider = get_provider(provider_name)  # 同提供商、不同模型
+        compare_provider = get_provider(provider_name, user_id=user_id)  # 同提供商、不同模型
         yield {"event": "status", "data": f"对比模型 {compare_model} 开始评审..."}
         for idx, fc in enumerate(chunks, start=1):
             yield {
@@ -244,7 +244,7 @@ async def run_review_pipeline(
     # 持久化保存
     try:
         patches = [fc.model_dump(mode="json") for fc in pr.files]
-        review_id = await save_review(pr_url, provider_name, model, result, patches=patches)
+        review_id = await save_review(pr_url, provider_name, model, result, patches=patches, user_id=user_id)
         logger.info(f"评审已保存: ID={review_id} provider={provider_name} model={model}")
     except Exception as e:
         logger.error(f"保存评审记录失败: {e}")
@@ -267,6 +267,7 @@ async def run_review_pipeline(
                 review_body = result.summary[:1000] if result.summary else "自动化代码评审完成"
                 gh_result = await create_pr_review(
                     owner, repo, pull_number, pr.head_sha, review_body, gh_comments,
+                    token=token,
                 )
                 if gh_result:
                     result.github_review_id = gh_result.get("id")
@@ -277,7 +278,7 @@ async def run_review_pipeline(
     # 邮件通知
     try:
         logger.info(f"正在发送邮件通知: {owner}/{repo}#{pull_number}")
-        await send_review_notification(owner, repo, pr.title, result)
+        await send_review_notification(owner, repo, pr.title, result, user_id=user_id)
         logger.info(f"邮件通知已发送: {owner}/{repo}#{pull_number}")
     except Exception as e:
         logger.error(f"邮件通知失败: {e}")

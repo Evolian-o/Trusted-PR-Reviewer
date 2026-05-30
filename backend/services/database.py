@@ -5,6 +5,11 @@ import aiosqlite
 DB_PATH = "reviews.db"
 
 
+async def get_db() -> aiosqlite.Connection:
+    """获取数据库连接（调用方负责关闭）"""
+    return await aiosqlite.connect(DB_PATH)
+
+
 async def init_db():
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
@@ -37,6 +42,23 @@ async def init_db():
         await _migrate_add_column(db, "reviews", "share_token", "TEXT DEFAULT ''")
         # 迁移：旧表可能缺少 patches_json 列
         await _migrate_add_column(db, "reviews", "patches_json", "TEXT DEFAULT ''")
+        # 迁移：旧表可能缺少 user_id 列
+        await _migrate_add_column(db, "reviews", "user_id", "INTEGER DEFAULT 0")
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                session_id   TEXT PRIMARY KEY,
+                user_id      INTEGER NOT NULL,
+                github_token TEXT NOT NULL,
+                user_login   TEXT NOT NULL,
+                avatar_url   TEXT DEFAULT '',
+                created_at   TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+                expires_at   TEXT NOT NULL
+            )
+        """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)"
+        )
 
         await db.execute("""
             CREATE TABLE IF NOT EXISTS monitored_repos (
@@ -102,7 +124,7 @@ async def init_db():
         await db.commit()
 
 
-async def save_review(pr_url: str, provider: str, model: str | None, result, patches: list[dict] | None = None) -> int:
+async def save_review(pr_url: str, provider: str, model: str | None, result, patches: list[dict] | None = None, user_id: int = 0) -> int:
     await init_db()
     share_token = uuid.uuid4().hex[:12]  # 12 位短 token
     patches_str = json.dumps(patches) if patches else ""
@@ -112,8 +134,9 @@ async def save_review(pr_url: str, provider: str, model: str | None, result, pat
             INSERT INTO reviews (
                 owner, repo, pull_number, pr_title, pr_url,
                 provider, model, files_changed, additions, deletions,
-                risk_level, issue_count, suggestion_count, share_token, result_json, patches_json, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))
+                risk_level, issue_count, suggestion_count, share_token,
+                result_json, patches_json, user_id, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))
             """,
             (
                 result.owner,
@@ -132,6 +155,7 @@ async def save_review(pr_url: str, provider: str, model: str | None, result, pat
                 share_token,
                 result.model_dump_json(),
                 patches_str,
+                user_id,
             ),
         )
         await db.commit()
@@ -143,6 +167,7 @@ async def list_reviews(
     keyword: str | None = None,
     from_date: str | None = None,
     to_date: str | None = None,
+    user_id: int | None = None,
 ) -> list[dict]:
     await init_db()
     async with aiosqlite.connect(DB_PATH) as db:
@@ -155,6 +180,9 @@ async def list_reviews(
         conditions: list[str] = []
         params: list[str] = []
 
+        if user_id is not None:
+            conditions.append("user_id = ?")
+            params.append(str(user_id))
         if keyword:
             conditions.append("(owner LIKE ? OR repo LIKE ? OR pr_title LIKE ?)")
             params.extend([f"%{keyword}%", f"%{keyword}%", f"%{keyword}%"])
@@ -440,3 +468,68 @@ async def _migrate_add_column(db: aiosqlite.Connection, table: str, column: str,
     existing = [row[1] for row in await cursor.fetchall()]
     if column not in existing:
         await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}")
+
+
+# ── 会话管理 ──────────────────────────────────────────────
+
+async def create_session(session_id: str, user_id: int, github_token: str, user_login: str, avatar_url: str = "", expires_at: str = "") -> None:
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """INSERT OR REPLACE INTO sessions
+               (session_id, user_id, github_token, user_login, avatar_url, expires_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (session_id, user_id, github_token, user_login, avatar_url, expires_at),
+        )
+        await db.commit()
+
+
+async def get_session(session_id: str) -> dict | None:
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM sessions WHERE session_id=?", (session_id,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def delete_session(session_id: str) -> bool:
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "DELETE FROM sessions WHERE session_id=?", (session_id,)
+        )
+        await db.commit()
+        return cursor.rowcount > 0
+
+
+async def delete_all_user_sessions(user_id: int) -> int:
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "DELETE FROM sessions WHERE user_id=?", (user_id,)
+        )
+        await db.commit()
+        return cursor.rowcount
+
+
+async def cleanup_expired_sessions() -> int:
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "DELETE FROM sessions WHERE expires_at < datetime('now', 'localtime')"
+        )
+        await db.commit()
+        return cursor.rowcount
+
+
+async def get_all_user_ids_with_active_monitors() -> list[int]:
+    """返回所有有活跃监控仓库的用户 ID 列表"""
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT DISTINCT user_id FROM monitored_repos WHERE active=1"
+        )
+        return [row[0] for row in await cursor.fetchall()]

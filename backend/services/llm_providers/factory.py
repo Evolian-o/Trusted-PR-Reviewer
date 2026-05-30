@@ -3,8 +3,8 @@ from .base import BaseLLMProvider
 from .ollama import OllamaProvider
 from .openai_compatible import OpenAICompatibleProvider
 
-_providers: dict[str, BaseLLMProvider] = {}       # 内置供应商
-_custom_providers: dict[str, OpenAICompatibleProvider] = {}  # 用户自定义
+_providers: dict[str, BaseLLMProvider] = {}       # 内置供应商（所有用户共享，key=name）
+_custom_providers: dict[tuple[int, str], OpenAICompatibleProvider] = {}  # 用户自定义（key=(user_id, name)）
 _builtin_names: set[str] = {"ollama", "deepseek", "doubao", "openai"}
 
 _custom_loaded_for_user: int | None = None  # 已加载自定义提供商的用户 ID
@@ -29,15 +29,12 @@ def _register_defaults():
 
 
 async def load_custom_providers(user_id: int):
-    """从 DB 加载用户的自定义供应商"""
-    global _custom_providers, _custom_loaded_for_user
+    """从 DB 加载用户的自定义供应商到内存"""
+    global _custom_loaded_for_user
 
-    # 如果已是同一用户，跳过重复加载
     if _custom_loaded_for_user == user_id:
         return
 
-    # 清除旧用户的自定义供应商
-    _custom_providers.clear()
     _custom_loaded_for_user = user_id
 
     from services.database import list_custom_providers as db_list
@@ -56,31 +53,46 @@ async def load_custom_providers(user_id: int):
             timeout=row.get("timeout", 120),
             is_builtin=False,
         )
-        _custom_providers[row["name"]] = provider
+        _custom_providers[(user_id, row["name"])] = provider
 
 
-def register_custom_provider(name: str, provider: OpenAICompatibleProvider):
+def register_custom_provider(user_id: int, name: str, provider: OpenAICompatibleProvider):
     """注册自定义供应商到内存"""
-    _custom_providers[name] = provider
+    _custom_providers[(user_id, name)] = provider
 
 
-def unregister_custom_provider(name: str) -> bool:
-    """从内存移除自定义供应商"""
-    if name in _custom_providers:
-        del _custom_providers[name]
-        return True
-    return False
+def unregister_custom_provider(name: str, user_id: int | None = None) -> bool:
+    """从内存移除自定义供应商。
+    如果指定 user_id，只移除该用户的；否则移除所有匹配 name 的。
+    """
+    global _custom_providers
+    if user_id is not None:
+        key = (user_id, name)
+        if key in _custom_providers:
+            del _custom_providers[key]
+            return True
+        return False
+    # 移除所有匹配 name 的
+    to_remove = [k for k in _custom_providers if k[1] == name]
+    for k in to_remove:
+        del _custom_providers[k]
+    return len(to_remove) > 0
 
 
-def get_provider(name: str) -> BaseLLMProvider:
-    """获取供应商 — 先查内置，再查自定义"""
+def get_provider(name: str, user_id: int = 0) -> BaseLLMProvider:
+    """获取供应商 — 先查内置，再查用户自定义"""
     _register_defaults()
     name = name.lower()
     if name in _providers:
         return _providers[name]
-    if name in _custom_providers:
-        return _custom_providers[name]
-    available = list(_providers.keys()) + list(_custom_providers.keys())
+    if (user_id, name) in _custom_providers:
+        return _custom_providers[(user_id, name)]
+    # 兜底：遍历所有自定义（user_id=0 时不检查 user_id）
+    if user_id == 0:
+        for (uid, pname), provider in _custom_providers.items():
+            if pname == name:
+                return provider
+    available = list(_providers.keys()) + [pname for _, pname in _custom_providers.keys()]
     raise ValueError(f"未知 Provider: {name}，可用: {', '.join(available) if available else '(无)'}")
 
 
@@ -110,24 +122,39 @@ def get_provider_info(name: str) -> dict | None:
 def list_providers() -> list[str]:
     """返回所有供应商名称列表（兼容旧接口）"""
     _register_defaults()
-    return list(_providers.keys()) + list(_custom_providers.keys())
+    return list(_providers.keys()) + list(set(pname for _, pname in _custom_providers.keys()))
 
 
 def list_providers_with_meta() -> list[dict]:
-    """返回所有供应商的元数据列表"""
+    """返回所有供应商的元数据列表（去重同名自定义）"""
     _register_defaults()
     result = []
+    seen = set()
 
-    for name, p in {**_providers, **_custom_providers}.items():
+    for name, p in _providers.items():
+        seen.add(name)
         result.append({
             "name": p.name,
-            "display_name": _display_name(p.name, name in _builtin_names),
-            "is_builtin": name in _builtin_names,
+            "display_name": _display_name(p.name, True),
+            "is_builtin": True,
             "is_enabled": True,
             "default_model": getattr(p, "default_model", ""),
-            "needs_config": not getattr(p, "has_api_key", True) if name in _builtin_names else False,
+            "needs_config": not getattr(p, "has_api_key", True),
             "models": [],
         })
+
+    for (uid, pname), p in _custom_providers.items():
+        if pname not in seen:
+            seen.add(pname)
+            result.append({
+                "name": p.name,
+                "display_name": _display_name(p.name, False),
+                "is_builtin": False,
+                "is_enabled": True,
+                "default_model": getattr(p, "default_model", ""),
+                "needs_config": False,
+                "models": [],
+            })
 
     return result
 

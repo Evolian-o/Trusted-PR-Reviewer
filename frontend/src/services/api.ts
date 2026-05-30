@@ -6,14 +6,16 @@ export async function checkAuthStatus(): Promise<{
   avatar_url?: string
   token_expired?: boolean
 }> {
-  const resp = await fetch('/api/auth/status')
+  const resp = await fetch('/api/auth/status', { credentials: 'include' })
   return resp.json()
 }
 
 export async function apiFetch(url: string, options?: RequestInit): Promise<Response> {
-  const resp = await fetch(url, options)
+  const resp = await fetch(url, {
+    ...options,
+    credentials: 'include',
+  })
   if (resp.status === 401) {
-    // Token 过期或无效，跳转登录页
     window.location.href = '/?expired=1'
     throw new Error('登录已过期')
   }
@@ -27,7 +29,7 @@ export async function fetchProviders(): Promise<ProviderInfo[]> {
 }
 
 export async function fetchProviderModels(providerName: string): Promise<string[]> {
-  const resp = await fetch(`/api/providers/${providerName}/models`)
+  const resp = await fetch(`/api/providers/${providerName}/models`, { credentials: 'include' })
   const data = await resp.json()
   return data.models || []
 }
@@ -37,6 +39,7 @@ export async function createCustomProvider(input: CustomProviderInput): Promise<
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
+    credentials: 'include',
   })
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({ error: '创建失败' }))
@@ -57,7 +60,7 @@ export async function updateCustomProvider(name: string, input: Partial<CustomPr
 }
 
 export async function deleteCustomProvider(name: string): Promise<void> {
-  const resp = await fetch(`/api/providers/custom/${name}`, { method: 'DELETE' })
+  const resp = await fetch(`/api/providers/custom/${name}`, { method: 'DELETE', credentials: 'include' })
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({ error: '删除失败' }))
     throw new Error(err.error || err.detail || '删除失败')
@@ -69,12 +72,13 @@ export async function testProviderConnection(name: string, data?: CustomProvider
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data || {}),
+    credentials: 'include',
   })
   return resp.json()
 }
 
 export async function fetchCachedReview(reviewId: number): Promise<{ result: ReviewResult; patches: FileInfo[] | null }> {
-  const resp = await fetch(`/api/history/${reviewId}`)
+  const resp = await fetch(`/api/history/${reviewId}`, { credentials: 'include' })
   const data = await resp.json()
   if (data.error) throw new Error(data.error)
   const result = JSON.parse(data.result_json) as ReviewResult
@@ -110,7 +114,7 @@ export function streamReview(
 
   const url = `/api/review?${params.toString()}`
   console.log('[SSE] 连接:', url)
-  const es = new EventSource(url)
+  const es = new EventSource(url, { withCredentials: true })
   let closed = false
 
   const close = () => {
@@ -209,7 +213,7 @@ export function streamReview(
 }
 
 export async function fetchSharedReview(token: string): Promise<ReviewResult> {
-  const resp = await fetch(`/api/share/${token}`)
+  const resp = await fetch(`/api/share/${token}`, { credentials: 'include' })
   if (!resp.ok) throw new Error('分享链接无效或已过期')
   const data = await resp.json()
   if (data.error) throw new Error(data.error)
@@ -217,7 +221,7 @@ export async function fetchSharedReview(token: string): Promise<ReviewResult> {
 }
 
 export async function fetchRepoStats(owner: string, repo: string): Promise<TrendEntry[]> {
-  const resp = await fetch(`/api/history/stats?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`)
+  const resp = await fetch(`/api/history/stats?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`, { credentials: 'include' })
   const data = await resp.json()
   return data.trend || []
 }

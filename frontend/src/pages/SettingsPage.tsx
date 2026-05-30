@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
 import { fetchProviders, fetchProviderModels } from '../services/api'
 import type { ProviderInfo } from '../types/review'
 import ProviderManager from '../components/Settings/ProviderManager'
@@ -18,7 +18,7 @@ interface Settings {
 }
 
 export default function SettingsPage() {
-  const [checking, setChecking] = useState(true)
+  const { auth } = useAuth()
   const [loading, setLoading] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -36,29 +36,17 @@ export default function SettingsPage() {
     email: { to_email: '', password: '', enabled: false },
   })
   const [providerModels, setProviderModels] = useState<string[]>([])
-  const navigate = useNavigate()
 
   // ── 初始加载 ──
   useEffect(() => {
-    fetch('/api/auth/status')
-      .then((r) => r.json())
-      .then((data) => {
-        if (!data.authenticated) { navigate('/', { replace: true }); return }
-        return Promise.all([fetch('/api/settings'), fetchProviders()])
-      })
-      .then((results) => {
-        if (!results) return
-        const [settingsResp, provs] = results as [Response, ProviderInfo[]]
-        return Promise.all([settingsResp.json(), provs])
-      })
-      .then((data) => {
-        if (!data) return
-        const [settingsData, provs] = data as [Record<string, unknown>, ProviderInfo[]]
-        if (settingsData && !settingsData.error) setSettings(settingsData as unknown as Settings)
+    if (auth.loading) return
+    Promise.all([fetch('/api/settings'), fetchProviders()])
+      .then(async ([settingsResp, provs]) => {
+        const settingsData = await settingsResp.json()
+        if (settingsData && !settingsData.error) setSettings(settingsData as Settings)
         setProviders(provs)
       })
-      .finally(() => setChecking(false))
-  }, [navigate])
+  }, [auth.loading])
 
   // ── 当前提供商的模型列表 ──
   useEffect(() => {
@@ -129,7 +117,7 @@ export default function SettingsPage() {
   }
 
   // ── 加载中 ──
-  if (checking) {
+  if (auth.loading) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />

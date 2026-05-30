@@ -17,9 +17,9 @@ logging.basicConfig(
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"), override=True)
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 
 from services.llm_providers.factory import (
@@ -42,10 +42,13 @@ from services.database import (
     get_review_by_share_token,
 )
 from services.auth import (
-    get_login_url, complete_auth, is_authenticated, clear_auth, get_user_info,
-    get_token, get_user_id, is_token_expired,
+    get_login_url, complete_auth,
+    AuthInfo, verify_token,
+    destroy_session,
+    SESSION_MAX_AGE_SECONDS,
 )
-from services.scheduler import start_scheduler, stop_scheduler, get_scheduler_status, restore_scheduler
+from services.auth_middleware import require_auth, optional_auth
+from services.scheduler import start_scheduler, stop_scheduler, get_scheduler_status, restore_all_schedulers
 
 # 评审端点频率限制: 每分钟最多 10 次
 _review_limiter = RateLimiter(max_requests=10, window_seconds=60)
@@ -56,29 +59,18 @@ import httpx
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger = logging.getLogger("main")
-    # 尝试恢复认证态
+    # 恢复所有有活跃监控仓库的用户的调度器
     try:
-        from services.auth import restore_auth
-        restored = await restore_auth()
-        if restored:
-            logger.info("已从数据库恢复认证态")
-    except Exception:
-        pass
-
-    # 尝试恢复调度器（从 DB 读取已配置的 user）
-    try:
-        from services.database import get_db
-        db = await get_db()
-        cursor = await db.execute(
-            "SELECT DISTINCT user_id FROM monitored_repos WHERE active=1 LIMIT 1"
-        )
-        row = await cursor.fetchone()
-        if row:
-            await restore_scheduler(row[0])
-    except Exception:
-        pass
+        await restore_all_schedulers()
+    except Exception as e:
+        logger.warning(f"恢复调度器失败: {e}")
     yield
-    await stop_scheduler()
+    # 停止所有调度器
+    try:
+        from services.scheduler import stop_all_schedulers
+        await stop_all_schedulers()
+    except Exception:
+        pass
 
 
 app = FastAPI(title="Trusted PR Reviewer", lifespan=lifespan)
@@ -124,58 +116,66 @@ async def auth_login():
 @app.get("/api/auth/callback")
 async def auth_callback(code: str = Query(...)):
     try:
-        await complete_auth(code)
+        session_id, auth = await complete_auth(code)
         # 登录成功后自动启动调度器
-        user_id = get_user_id()
-        if user_id is not None:
-            interval = int(await get_setting(user_id, "poll_interval_seconds", "300"))
-            await start_scheduler(user_id, interval)
-        return RedirectResponse(url="http://localhost:5173/dashboard")
+        try:
+            interval = int(await get_setting(auth.user_id, "poll_interval_seconds", "300"))
+            await start_scheduler(auth.user_id, interval)
+        except Exception:
+            pass
+        response = RedirectResponse(url="http://localhost:5173/dashboard")
+        response.set_cookie(
+            key="pr_session",
+            value=session_id,
+            httponly=True,
+            samesite="lax",
+            max_age=SESSION_MAX_AGE_SECONDS,
+            secure=False,  # 本地开发用 HTTP
+        )
+        return response
     except RuntimeError as e:
-        return {"error": str(e)}
+        return JSONResponse(content={"error": str(e)}, status_code=400)
 
 
 @app.get("/api/auth/status")
-async def auth_status():
-    if is_authenticated():
-        info = get_user_info()
-        expired = is_token_expired()
+async def auth_status(auth: AuthInfo | None = Depends(optional_auth)):
+    if auth is not None:
+        expired = auth.is_token_expired()
         return {
             "authenticated": True,
-            "login": info.get("user_login", ""),
-            "avatar_url": info.get("avatar_url", ""),
-            "user_id": info.get("user_id"),
+            "login": auth.user_login,
+            "avatar_url": auth.avatar_url,
+            "user_id": auth.user_id,
             "token_expired": expired,
-            "token_age_seconds": info.get("token_age_seconds", 0),
         }
     return {"authenticated": False}
 
 
 @app.post("/api/auth/logout")
-async def auth_logout():
-    clear_auth()
-    return {"status": "ok"}
+async def auth_logout(auth: AuthInfo | None = Depends(optional_auth)):
+    if auth is not None:
+        await destroy_session(auth.session_id)  # type: ignore
+    response = JSONResponse(content={"status": "ok"})
+    response.delete_cookie("pr_session")
+    return response
 
 
 # ── 仓库 & 监控端点 ──────────────────────────────────────
 
 @app.get("/api/repos")
-async def repo_list():
-    token = get_token()
-    if not token:
-        return {"error": "未认证"}, 401
+async def repo_list(auth: AuthInfo = Depends(require_auth)):
     async with httpx.AsyncClient(verify=False) as client:
         resp = await client.get(
             "https://api.github.com/user/repos",
             params={"sort": "updated", "per_page": 100, "type": "all"},
             headers={
-                "Authorization": f"Bearer {token}",
+                "Authorization": f"Bearer {auth.github_token}",
                 "Accept": "application/vnd.github+json",
             },
         )
         repos = resp.json()
         if not isinstance(repos, list):
-            return {"error": "获取仓库失败"}, 400
+            return JSONResponse(content={"error": "获取仓库失败"}, status_code=400)
         result = [
             {
                 "id": r["id"],
@@ -192,88 +192,66 @@ async def repo_list():
 
 
 @app.get("/api/monitor")
-async def monitor_list():
-    user_id = get_user_id()
-    if user_id is None:
-        return {"error": "未认证"}, 401
-    repos = await list_monitored_repos(user_id)
+async def monitor_list(auth: AuthInfo = Depends(require_auth)):
+    repos = await list_monitored_repos(auth.user_id)
     return {"repos": repos}
 
 
 @app.post("/api/monitor")
-async def monitor_add(data: dict):
-    user_id = get_user_id()
-    if user_id is None:
-        return {"error": "未认证"}, 401
+async def monitor_add(data: dict, auth: AuthInfo = Depends(require_auth)):
     owner = data.get("owner", "")
     repo = data.get("repo", "")
     if not owner or not repo:
-        return {"error": "缺少 owner 或 repo"}, 400
-    await add_monitored_repo(user_id, owner, repo)
+        return JSONResponse(content={"error": "缺少 owner 或 repo"}, status_code=400)
+    await add_monitored_repo(auth.user_id, owner, repo)
     return {"status": "ok"}
 
 
 @app.delete("/api/monitor/{repo_id}")
-async def monitor_delete(repo_id: int):
-    user_id = get_user_id()
-    if user_id is None:
-        return {"error": "未认证"}, 401
+async def monitor_delete(repo_id: int, auth: AuthInfo = Depends(require_auth)):
     deleted = await remove_monitored_repo(repo_id)
     if not deleted:
-        return {"error": "记录不存在"}, 404
+        return JSONResponse(content={"error": "记录不存在"}, status_code=404)
     return {"status": "ok"}
 
 
 # ── 调度器端点 ──────────────────────────────────────────────
 
 @app.get("/api/scheduler/status")
-async def scheduler_status():
-    user_id = get_user_id()
-    if user_id is None:
-        return {"error": "未认证"}, 401
-    status = get_scheduler_status()
-    # 补充监控仓库数量
-    repos = await list_monitored_repos(user_id)
+async def scheduler_status(auth: AuthInfo = Depends(require_auth)):
+    status = get_scheduler_status(auth.user_id)
+    repos = await list_monitored_repos(auth.user_id)
     status["monitored_repos"] = len([r for r in repos if r.get("active")])
     return status
 
 
 @app.post("/api/scheduler/start")
-async def scheduler_start():
-    user_id = get_user_id()
-    if user_id is None:
-        return {"error": "未认证"}, 401
-    interval = int(await get_setting(user_id, "poll_interval_seconds", "300"))
-    await start_scheduler(user_id, interval)
+async def scheduler_start(auth: AuthInfo = Depends(require_auth)):
+    interval = int(await get_setting(auth.user_id, "poll_interval_seconds", "300"))
+    await start_scheduler(auth.user_id, interval)
     return {"status": "ok", "message": f"调度器已启动，间隔 {interval}s"}
 
 
 @app.post("/api/scheduler/stop")
-async def scheduler_stop():
-    user_id = get_user_id()
-    if user_id is None:
-        return {"error": "未认证"}, 401
-    await stop_scheduler()
+async def scheduler_stop(auth: AuthInfo = Depends(require_auth)):
+    await stop_scheduler(auth.user_id)
     return {"status": "ok", "message": "调度器已停止"}
 
 
 @app.get("/api/repos/{owner}/{repo}/pulls")
-async def repo_pulls(owner: str, repo: str, state: str = "open"):
-    token = get_token()
-    if not token:
-        return {"error": "未认证"}, 401
+async def repo_pulls(owner: str, repo: str, state: str = "open", auth: AuthInfo = Depends(require_auth)):
     async with httpx.AsyncClient(verify=False) as client:
         resp = await client.get(
             f"https://api.github.com/repos/{owner}/{repo}/pulls",
             params={"state": state, "per_page": 30},
             headers={
-                "Authorization": f"Bearer {token}",
+                "Authorization": f"Bearer {auth.github_token}",
                 "Accept": "application/vnd.github+json",
             },
         )
         data = resp.json()
         if not isinstance(data, list):
-            return {"error": data.get("message", "获取 PR 失败")}, resp.status_code
+            return JSONResponse(content={"error": data.get("message", "获取 PR 失败")}, status_code=resp.status_code)
         return {
             "pulls": [
                 {
@@ -292,49 +270,46 @@ async def repo_pulls(owner: str, repo: str, state: str = "open"):
 
 
 @app.post("/api/repos/{owner}/{repo}/pulls")
-async def repo_create_pr(owner: str, repo: str, data: dict):
-    token = get_token()
-    if not token:
-        return {"error": "未认证"}, 401
+async def repo_create_pr(owner: str, repo: str, data: dict, auth: AuthInfo = Depends(require_auth)):
     title = data.get("title", "")
     head = data.get("head", "")
     base = data.get("base", "main")
     if not title or not head:
-        return {"error": "缺少 title 或 head"}, 400
+        return JSONResponse(content={"error": "缺少 title 或 head"}, status_code=400)
     async with httpx.AsyncClient(verify=False) as client:
         resp = await client.post(
             f"https://api.github.com/repos/{owner}/{repo}/pulls",
             json={"title": title, "head": head, "base": base},
             headers={
-                "Authorization": f"Bearer {token}",
+                "Authorization": f"Bearer {auth.github_token}",
                 "Accept": "application/vnd.github+json",
             },
         )
         pr = resp.json()
         if resp.status_code >= 400:
-            return {"error": pr.get("message", "创建 PR 失败")}, resp.status_code
+            return JSONResponse(content={"error": pr.get("message", "创建 PR 失败")}, status_code=resp.status_code)
         return {"number": pr["number"], "html_url": pr["html_url"], "title": pr["title"]}
 
 
 @app.get("/api/providers")
-async def providers():
+async def providers(auth: AuthInfo | None = Depends(optional_auth)):
     """返回所有可用提供商（内置 + 自定义），含元数据"""
-    user_id = get_user_id() or 0
+    user_id = auth.user_id if auth else 0
     if user_id:
         await load_custom_providers(user_id)
     return {"providers": list_providers_with_meta()}
 
 
 @app.get("/api/providers/{name}/models")
-async def provider_models(name: str):
+async def provider_models(name: str, auth: AuthInfo | None = Depends(optional_auth)):
     """获取指定提供商的模型列表（代理到上游 API）"""
-    user_id = get_user_id() or 0
+    user_id = auth.user_id if auth else 0
     if user_id:
         await load_custom_providers(user_id)
     try:
-        provider = get_provider(name)
+        provider = get_provider(name, user_id=user_id)
     except ValueError:
-        return {"error": f"未知提供商: {name}"}, 404
+        return JSONResponse(content={"error": f"未知提供商: {name}"}, status_code=404)
 
     if hasattr(provider, "list_models"):
         models = await provider.list_models()
@@ -343,17 +318,13 @@ async def provider_models(name: str):
 
 
 @app.post("/api/providers/custom")
-async def provider_create(data: dict):
+async def provider_create(data: dict, auth: AuthInfo = Depends(require_auth)):
     """添加自定义 OpenAI 兼容提供商"""
-    user_id = get_user_id()
-    if user_id is None:
-        return {"error": "未认证"}, 401
-
     name = (data.get("name") or "").strip().lower()
     if not name:
-        return {"error": "name 不能为空"}, 400
+        return JSONResponse(content={"error": "name 不能为空"}, status_code=400)
     if is_builtin(name):
-        return {"error": f"'{name}' 是内置提供商，不能覆盖"}, 409
+        return JSONResponse(content={"error": f"'{name}' 是内置提供商，不能覆盖"}, status_code=409)
 
     display_name = (data.get("display_name") or "").strip()
     base_url = (data.get("base_url") or "").strip()
@@ -361,12 +332,11 @@ async def provider_create(data: dict):
     default_model = (data.get("default_model") or "").strip()
 
     if not display_name or not base_url or not api_key:
-        return {"error": "display_name / base_url / api_key 为必填"}, 400
+        return JSONResponse(content={"error": "display_name / base_url / api_key 为必填"}, status_code=400)
 
-    # 检查是否已存在同名自定义提供商
-    existing = await db_get_custom_provider(user_id, name)
+    existing = await db_get_custom_provider(auth.user_id, name)
     if existing:
-        return {"error": f"'{name}' 已存在"}, 409
+        return JSONResponse(content={"error": f"'{name}' 已存在"}, status_code=409)
 
     api_key_enc = encrypt(api_key)
     row_data = {
@@ -377,9 +347,8 @@ async def provider_create(data: dict):
         "default_model": default_model,
         "timeout": data.get("timeout", 120),
     }
-    await db_create_custom_provider(user_id, row_data)
+    await db_create_custom_provider(auth.user_id, row_data)
 
-    # 注册到内存
     from services.llm_providers.openai_compatible import OpenAICompatibleProvider
     provider = OpenAICompatibleProvider(
         name=name, base_url=base_url, api_key=api_key,
@@ -387,23 +356,19 @@ async def provider_create(data: dict):
         timeout=data.get("timeout", 120),
         is_builtin=False,
     )
-    register_custom_provider(name, provider)
+    register_custom_provider(auth.user_id, name, provider)
     return {"status": "ok", "name": name}
 
 
 @app.put("/api/providers/custom/{name}")
-async def provider_update(name: str, data: dict):
+async def provider_update(name: str, data: dict, auth: AuthInfo = Depends(require_auth)):
     """更新自定义提供商配置"""
-    user_id = get_user_id()
-    if user_id is None:
-        return {"error": "未认证"}, 401
-
     if is_builtin(name):
-        return {"error": f"'{name}' 是内置提供商，不可修改"}, 403
+        return JSONResponse(content={"error": f"'{name}' 是内置提供商，不可修改"}, status_code=403)
 
-    existing = await db_get_custom_provider(user_id, name)
+    existing = await db_get_custom_provider(auth.user_id, name)
     if not existing:
-        return {"error": f"'{name}' 不存在"}, 404
+        return JSONResponse(content={"error": f"'{name}' 不存在"}, status_code=404)
 
     updates = {}
     for field in ("display_name", "base_url", "default_model", "timeout", "is_enabled"):
@@ -413,12 +378,11 @@ async def provider_update(name: str, data: dict):
         updates["api_key_enc"] = encrypt(data["api_key"])
 
     if updates:
-        await db_update_custom_provider(user_id, name, updates)
+        await db_update_custom_provider(auth.user_id, name, updates)
 
-    # 重新加载到内存（先移除旧的，再注册新的）
-    unregister_custom_provider(name)
+    unregister_custom_provider(name, user_id=auth.user_id)
     from services.llm_providers.openai_compatible import OpenAICompatibleProvider
-    row = await db_get_custom_provider(user_id, name)
+    row = await db_get_custom_provider(auth.user_id, name)
     if row and row.get("is_enabled"):
         api_key = decrypt(row["api_key_enc"])
         provider = OpenAICompatibleProvider(
@@ -427,36 +391,28 @@ async def provider_update(name: str, data: dict):
             timeout=row.get("timeout", 120),
             is_builtin=False,
         )
-        register_custom_provider(name, provider)
+        register_custom_provider(auth.user_id, name, provider)
 
     return {"status": "ok"}
 
 
 @app.delete("/api/providers/custom/{name}")
-async def provider_delete(name: str):
+async def provider_delete(name: str, auth: AuthInfo = Depends(require_auth)):
     """删除自定义提供商"""
-    user_id = get_user_id()
-    if user_id is None:
-        return {"error": "未认证"}, 401
-
     if is_builtin(name):
-        return {"error": f"'{name}' 是内置提供商，不可删除"}, 403
+        return JSONResponse(content={"error": f"'{name}' 是内置提供商，不可删除"}, status_code=403)
 
-    deleted = await db_delete_custom_provider(user_id, name)
+    deleted = await db_delete_custom_provider(auth.user_id, name)
     if not deleted:
-        return {"error": f"'{name}' 不存在"}, 404
+        return JSONResponse(content={"error": f"'{name}' 不存在"}, status_code=404)
 
-    unregister_custom_provider(name)
+    unregister_custom_provider(name, user_id=auth.user_id)
     return {"status": "ok"}
 
 
 @app.post("/api/providers/custom/{name}/test")
-async def provider_test(name: str, data: dict | None = None):
+async def provider_test(name: str, data: dict | None = None, auth: AuthInfo = Depends(require_auth)):
     """测试指定提供商的连接"""
-    user_id = get_user_id()
-    if user_id is None:
-        return {"error": "未认证"}, 401
-
     from services.llm_providers.openai_compatible import OpenAICompatibleProvider
 
     if is_builtin(name):
@@ -465,12 +421,11 @@ async def provider_test(name: str, data: dict | None = None):
         except ValueError:
             return {"ok": False, "error": f"'{name}' 未配置 API Key"}
     else:
-        # 从请求体或 DB 获取配置
         if data:
             api_key = data.get("api_key", "")
             base_url = data.get("base_url", "")
         else:
-            row = await db_get_custom_provider(user_id, name)
+            row = await db_get_custom_provider(auth.user_id, name)
             if not row:
                 return {"ok": False, "error": f"'{name}' 不存在"}
             api_key = decrypt(row["api_key_enc"])
@@ -485,7 +440,7 @@ async def provider_test(name: str, data: dict | None = None):
     return {"ok": ok} if ok else {"ok": False, "error": "连接失败"}
 
 
-async def event_stream(pr_url: str, provider_name: str, model: str | None, dims: str | None, compare_model: str | None = None):
+async def event_stream(pr_url: str, provider_name: str, model: str | None, dims: str | None, token: str | None = None, user_id: int = 0, compare_model: str | None = None):
     """SSE 事件流 — 薄包装，委托给 ReviewOrchestrator"""
     from services.review_orchestrator import run_review_pipeline
 
@@ -496,8 +451,8 @@ async def event_stream(pr_url: str, provider_name: str, model: str | None, dims:
     try:
         async for event in run_review_pipeline(
             pr_url, provider_name, model,
-            token=get_token(),
-            user_id=get_user_id() or 0,
+            token=token,
+            user_id=user_id,
             dimensions=dims.split(",") if dims else None,
             compare_model=compare_model,
         ):
@@ -517,8 +472,14 @@ async def review(
     model: str | None = Query(None, description="模型名称"),
     dims: str | None = Query(None, description="评审维度 (逗号分隔: bug,security,performance,style)"),
     compare_model: str | None = Query(None, description="对比模型名称"),
+    auth: AuthInfo | None = Depends(optional_auth),
 ):
-    return EventSourceResponse(event_stream(url, provider, model, dims, compare_model))
+    return EventSourceResponse(event_stream(
+        url, provider, model, dims,
+        token=auth.github_token if auth else None,
+        user_id=auth.user_id if auth else 0,
+        compare_model=compare_model,
+    ))
 
 
 @app.get("/api/history")
@@ -526,8 +487,9 @@ async def history(
     keyword: str | None = None,
     from_date: str | None = None,
     to_date: str | None = None,
+    auth: AuthInfo = Depends(require_auth),
 ):
-    rows = await list_reviews(keyword=keyword, from_date=from_date, to_date=to_date)
+    rows = await list_reviews(keyword=keyword, from_date=from_date, to_date=to_date, user_id=auth.user_id)
     return {"reviews": rows}
 
 
@@ -593,12 +555,9 @@ async def history_stats(owner: str, repo: str):
 # ── 设置端点 ──────────────────────────────────────────────
 
 @app.get("/api/settings")
-async def settings_get():
-    user_id = get_user_id()
-    if user_id is None:
-        return {"error": "未认证"}, 401
-    kv = await get_all_settings(user_id)
-    email = await get_email_config(user_id)
+async def settings_get(auth: AuthInfo = Depends(require_auth)):
+    kv = await get_all_settings(auth.user_id)
+    email = await get_email_config(auth.user_id)
     return {
         "poll_interval_seconds": kv.get("poll_interval_seconds", "300"),
         "default_provider": kv.get("default_provider", "deepseek"),
@@ -616,42 +575,32 @@ async def settings_get():
 
 
 @app.put("/api/settings")
-async def settings_update(data: dict):
-    user_id = get_user_id()
-    if user_id is None:
-        return {"error": "未认证"}, 401
-
-    # 保存通用设置
+async def settings_update(data: dict, auth: AuthInfo = Depends(require_auth)):
     for key in (
         "poll_interval_seconds", "default_provider", "default_model",
         "chunk_max_chars", "chunk_merge_max_chars", "chunk_max_lines", "chunk_strategy",
     ):
         if key in data:
-            await set_setting(user_id, key, str(data[key]))
+            await set_setting(auth.user_id, key, str(data[key]))
 
-    # 保存邮件配置
     email = data.get("email")
     if email:
-        await save_email_config(user_id, email)
+        await save_email_config(auth.user_id, email)
 
-    # 重启调度器（使用新的轮询间隔）
     try:
         interval = int(data.get("poll_interval_seconds", 300))
-        await start_scheduler(user_id, interval)
+        await start_scheduler(auth.user_id, interval)
     except Exception:
-        pass  # 调度器重启失败不影响设置保存
+        pass
 
     return {"status": "ok"}
 
 
 @app.post("/api/settings/email/test")
-async def email_test(data: dict):
-    user_id = get_user_id()
-    if user_id is None:
-        return {"error": "未认证"}, 401
+async def email_test(data: dict, auth: AuthInfo = Depends(require_auth)):
     from services.email_notifier import send_test_email
     try:
         await send_test_email(data)
         return {"status": "ok"}
     except Exception as e:
-        return {"error": str(e)}
+        return JSONResponse(content={"error": str(e)}, status_code=500)

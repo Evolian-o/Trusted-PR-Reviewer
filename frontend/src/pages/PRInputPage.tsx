@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
 import UrlInput from '../components/UrlInput'
 import ModelSelector from '../components/ModelSelector'
 import DimensionChecklist from '../components/DimensionChecklist'
@@ -7,24 +8,13 @@ import DimensionChecklist from '../components/DimensionChecklist'
 const URL_PATTERN = /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/
 
 export default function PRInputPage() {
+  const { auth } = useAuth()
   const [url, setUrl] = useState('')
   const [urlError, setUrlError] = useState('')
   const [provider, setProvider] = useState('deepseek')
   const [model, setModel] = useState('deepseek-chat')
   const [dims, setDims] = useState(['bug', 'security', 'performance', 'style'])
-  const [checking, setChecking] = useState(true)
   const navigate = useNavigate()
-
-  useEffect(() => {
-    fetch('/api/auth/status')
-      .then((r) => r.json())
-      .then((data) => {
-        if (!data.authenticated) {
-          navigate('/', { replace: true })
-        }
-      })
-      .finally(() => setChecking(false))
-  }, [navigate])
 
   const handleUrlChange = (v: string) => {
     setUrl(v)
@@ -52,7 +42,7 @@ export default function PRInputPage() {
     navigate(`/review/${owner}/${repo.replace('.git', '')}/${pr}?${params.toString()}`)
   }
 
-  if (checking) {
+  if (auth.loading) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />

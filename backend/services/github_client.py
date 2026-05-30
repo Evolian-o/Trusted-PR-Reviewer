@@ -1,9 +1,7 @@
 import httpx
-from services.auth import get_token
 
 
-async def github_get(path: str, params: dict | None = None) -> dict | list:
-    token = get_token()
+async def github_get(path: str, params: dict | None = None, token: str | None = None) -> dict | list:
     if not token:
         raise RuntimeError("未认证")
     async with httpx.AsyncClient(verify=False) as client:
@@ -19,8 +17,7 @@ async def github_get(path: str, params: dict | None = None) -> dict | list:
         return resp.json()
 
 
-async def github_post(path: str, data: dict) -> dict:
-    token = get_token()
+async def github_post(path: str, data: dict, token: str | None = None) -> dict:
     if not token:
         raise RuntimeError("未认证")
     async with httpx.AsyncClient(verify=False) as client:
@@ -43,11 +40,11 @@ async def create_pr_review(
     commit_id: str,
     body: str,
     comments: list[dict] | None = None,
+    token: str | None = None,
 ) -> dict | None:
     """向 GitHub PR 提交评审评论"""
-    token = get_token()
     if not token:
-        return None  # 未认证时静默跳过
+        return None
 
     payload: dict = {
         "commit_id": commit_id,
@@ -55,13 +52,13 @@ async def create_pr_review(
         "event": "COMMENT",
     }
     if comments:
-        # GitHub API 限制每次最多约 50 条评论
         payload["comments"] = comments[:50]
 
     try:
         return await github_post(
             f"/repos/{owner}/{repo}/pulls/{pull_number}/reviews",
             payload,
+            token=token,
         )
     except Exception as e:
         import logging

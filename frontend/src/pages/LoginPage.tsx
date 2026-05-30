@@ -1,22 +1,23 @@
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
 
 export default function LoginPage() {
-  const [checking, setChecking] = useState(true)
+  const { auth, refresh } = useAuth()
   const [searchParams] = useSearchParams()
   const expired = searchParams.get('expired') === '1'
   const navigate = useNavigate()
 
   useEffect(() => {
-    fetch('/api/auth/status')
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.authenticated && !data.token_expired) {
-          navigate('/dashboard', { replace: true })
-        }
-      })
-      .finally(() => setChecking(false))
-  }, [navigate])
+    if (auth.authenticated && !auth.tokenExpired) {
+      navigate('/dashboard', { replace: true })
+    }
+  }, [auth.authenticated, auth.tokenExpired, navigate])
+
+  // 页面加载时刷新一次 auth 状态（处理 callback 后 cookie 已设置但 context 未更新）
+  useEffect(() => {
+    refresh()
+  }, [refresh])
 
   const handleLogin = async () => {
     try {
@@ -28,7 +29,7 @@ export default function LoginPage() {
     }
   }
 
-  if (checking) {
+  if (auth.loading) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />

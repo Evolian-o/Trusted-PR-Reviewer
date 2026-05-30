@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
 import RepoList from '../components/Dashboard/RepoList'
 import MonitorPanel from '../components/Dashboard/MonitorPanel'
 import RecentReviews from '../components/Dashboard/RecentReviews'
@@ -36,14 +37,8 @@ interface HistoryItem {
   created_at: string
 }
 
-interface AuthUser {
-  login: string
-  avatar_url: string
-}
-
 export default function DashboardPage() {
-  const [user, setUser] = useState<AuthUser | null>(null)
-  const [checking, setChecking] = useState(true)
+  const { auth, logout } = useAuth()
   const [repos, setRepos] = useState<Repo[]>([])
   const [monitored, setMonitored] = useState<MonitoredRepo[]>([])
   const [recentReviews, setRecentReviews] = useState<HistoryItem[]>([])
@@ -55,20 +50,6 @@ export default function DashboardPage() {
     interval_seconds: number
   } | null>(null)
   const navigate = useNavigate()
-
-  // ── 认证检查 ──
-  useEffect(() => {
-    fetch('/api/auth/status')
-      .then((r) => r.json())
-      .then((data) => {
-        if (!data.authenticated) {
-          navigate('/', { replace: true })
-        } else {
-          setUser({ login: data.login, avatar_url: data.avatar_url })
-        }
-      })
-      .finally(() => setChecking(false))
-  }, [navigate])
 
   // ── 加载仓库 & 监控 & 最近评审 ──
   const loadData = useCallback(async () => {
@@ -88,8 +69,8 @@ export default function DashboardPage() {
   }, [])
 
   useEffect(() => {
-    if (!checking) loadData()
-  }, [checking, loadData])
+    if (!auth.loading) loadData()
+  }, [auth.loading, loadData])
 
   // ── 调度器状态（轮询） ──
   const fetchSchedulerStatus = useCallback(async () => {
@@ -102,12 +83,12 @@ export default function DashboardPage() {
   }, [])
 
   useEffect(() => {
-    if (!checking) {
+    if (!auth.loading) {
       fetchSchedulerStatus()
       const i = setInterval(fetchSchedulerStatus, 30000)
       return () => clearInterval(i)
     }
-  }, [checking, fetchSchedulerStatus])
+  }, [auth.loading, fetchSchedulerStatus])
 
   const toggleScheduler = async () => {
     const endpoint = schedulerStatus?.running
@@ -135,12 +116,12 @@ export default function DashboardPage() {
   }
 
   const handleLogout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' })
+    await logout()
     navigate('/', { replace: true })
   }
 
   // ── 加载中 ──
-  if (checking) {
+  if (auth.loading) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
@@ -174,10 +155,10 @@ export default function DashboardPage() {
               设置
             </button>
             <div className="flex items-center gap-2">
-              {user?.avatar_url && (
-                <img src={user.avatar_url} alt="" className="w-6 h-6 rounded-full" />
+              {auth.user?.avatar_url && (
+                <img src={auth.user.avatar_url} alt="" className="w-6 h-6 rounded-full" />
               )}
-              <span className="text-gray-300 text-sm">{user?.login}</span>
+              <span className="text-gray-300 text-sm">{auth.user?.login}</span>
               <button
                 onClick={handleLogout}
                 className="text-gray-500 hover:text-gray-300 text-sm transition-colors ml-2"

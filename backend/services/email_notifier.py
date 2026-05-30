@@ -11,7 +11,6 @@ _SSL_CTX.check_hostname = False
 _SSL_CTX.verify_mode = ssl.CERT_NONE
 
 from services.database import get_email_config
-from services.auth import get_user_id
 
 logger = logging.getLogger("email_notifier")
 
@@ -187,8 +186,6 @@ async def send_review_notification(
     owner: str, repo: str, pr_title: str, result, *, user_id: int | None = None,
 ) -> None:
     """评审完成后发送邮件通知"""
-    if user_id is None:
-        user_id = get_user_id()
     if user_id is None:
         return
 
