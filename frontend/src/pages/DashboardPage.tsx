@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { formatLocalTime } from '../utils/time'
+import RepoList from '../components/Dashboard/RepoList'
+import MonitorPanel from '../components/Dashboard/MonitorPanel'
+import RecentReviews from '../components/Dashboard/RecentReviews'
 
 interface Repo {
   id: number
@@ -9,7 +11,6 @@ interface Repo {
   full_name: string
   description: string
   private: boolean
-  updated_at: string
 }
 
 interface MonitoredRepo {
@@ -55,7 +56,7 @@ export default function DashboardPage() {
   } | null>(null)
   const navigate = useNavigate()
 
-  // 认证检查
+  // ── 认证检查 ──
   useEffect(() => {
     fetch('/api/auth/status')
       .then((r) => r.json())
@@ -69,7 +70,7 @@ export default function DashboardPage() {
       .finally(() => setChecking(false))
   }, [navigate])
 
-  // 加载仓库和监控
+  // ── 加载仓库 & 监控 & 最近评审 ──
   const loadData = useCallback(async () => {
     setReposLoading(true)
     const [reposResp, monitorResp, historyResp] = await Promise.all([
@@ -90,13 +91,12 @@ export default function DashboardPage() {
     if (!checking) loadData()
   }, [checking, loadData])
 
-  // 调度器状态
+  // ── 调度器状态（轮询） ──
   const fetchSchedulerStatus = useCallback(async () => {
     try {
       const resp = await fetch('/api/scheduler/status')
       if (resp.ok) {
-        const data = await resp.json()
-        setSchedulerStatus(data)
+        setSchedulerStatus(await resp.json())
       }
     } catch { /* ignore */ }
   }, [])
@@ -120,7 +120,6 @@ export default function DashboardPage() {
   const monitoredSet = new Set(monitored.map((m) => `${m.owner}/${m.repo}`))
 
   const toggleMonitor = async (owner: string, repo: string) => {
-    const key = `${owner}/${repo}`
     const existing = monitored.find((m) => m.owner === owner && m.repo === repo)
     if (existing) {
       await fetch(`/api/monitor/${existing.id}`, { method: 'DELETE' })
@@ -140,10 +139,7 @@ export default function DashboardPage() {
     navigate('/', { replace: true })
   }
 
-  const filtered = repos.filter((r) =>
-    r.full_name.toLowerCase().includes(search.toLowerCase())
-  )
-
+  // ── 加载中 ──
   if (checking) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
@@ -152,6 +148,7 @@ export default function DashboardPage() {
     )
   }
 
+  // ── 渲染 ──
   return (
     <div className="min-h-screen bg-gray-900">
       <nav className="border-b border-gray-700 bg-gray-850">
@@ -194,7 +191,6 @@ export default function DashboardPage() {
 
       <main className="max-w-6xl mx-auto px-4 py-8">
         <div className="flex gap-6">
-          {/* 仓库列表 */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-white">仓库列表</h2>
@@ -202,126 +198,19 @@ export default function DashboardPage() {
                 已监控 {monitored.length} 个仓库
               </span>
             </div>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="搜索仓库..."
-              className="w-full px-3 py-2 mb-3 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            <RepoList
+              repos={repos}
+              loading={reposLoading}
+              search={search}
+              onSearchChange={setSearch}
+              monitoredSet={monitoredSet}
+              onToggleMonitor={toggleMonitor}
             />
-            {reposLoading ? (
-              <div className="text-center text-gray-400 py-8">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mx-auto mb-2" />
-                加载仓库...
-              </div>
-            ) : (
-              <div className="space-y-1 max-h-[calc(100vh-260px)] overflow-y-auto">
-                {filtered.map((r) => (
-                  <div
-                    key={r.id}
-                    className="flex items-center justify-between px-3 py-2 bg-gray-800 rounded hover:bg-gray-750"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-white text-sm truncate">{r.full_name}</span>
-                        {r.private && (
-                          <span className="text-xs text-gray-500 border border-gray-600 px-1 rounded">Private</span>
-                        )}
-                      </div>
-                      {r.description && (
-                        <p className="text-gray-500 text-xs truncate mt-0.5">{r.description}</p>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => toggleMonitor(r.owner, r.repo)}
-                      className={`flex-shrink-0 px-3 py-1 text-xs rounded transition-colors ml-3 ${
-                        monitoredSet.has(`${r.owner}/${r.repo}`)
-                          ? 'bg-red-900/40 text-red-400 hover:bg-red-900/60'
-                          : 'bg-green-900/40 text-green-400 hover:bg-green-900/60'
-                      }`}
-                    >
-                      {monitoredSet.has(`${r.owner}/${r.repo}`) ? '取消监控' : '添加监控'}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
 
-          {/* 最近评审 */}
           <div className="w-80 flex-shrink-0">
-            {/* 调度器状态 */}
-            {schedulerStatus && (
-              <div className="mb-4 p-3 bg-gray-800 rounded-lg border border-gray-700">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-gray-300">自动监控</span>
-                  <span className={`flex items-center gap-1.5 text-xs font-medium ${
-                    schedulerStatus.running ? 'text-green-400' : 'text-gray-500'
-                  }`}>
-                    <span className={`w-2 h-2 rounded-full ${
-                      schedulerStatus.running ? 'bg-green-400 animate-pulse' : 'bg-gray-600'
-                    }`} />
-                    {schedulerStatus.running ? '运行中' : '已停止'}
-                  </span>
-                </div>
-                <div className="text-xs text-gray-500 space-y-1">
-                  <div className="flex justify-between">
-                    <span>监控仓库</span>
-                    <span>{schedulerStatus.monitored_repos} 个</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>轮询间隔</span>
-                    <span>{schedulerStatus.interval_seconds}s</span>
-                  </div>
-                </div>
-                <button
-                  onClick={toggleScheduler}
-                  className={`mt-2 w-full py-1 text-xs rounded transition-colors ${
-                    schedulerStatus.running
-                      ? 'bg-red-900/40 text-red-400 hover:bg-red-900/60'
-                      : 'bg-green-900/40 text-green-400 hover:bg-green-900/60'
-                  }`}
-                >
-                  {schedulerStatus.running ? '停止监控' : '启动监控'}
-                </button>
-              </div>
-            )}
-            <h2 className="text-lg font-semibold text-white mb-4">最近评审</h2>
-            {recentReviews.length === 0 ? (
-              <p className="text-gray-500 text-sm">暂无评审记录</p>
-            ) : (
-              <div className="space-y-2">
-                {recentReviews.map((r) => (
-                  <div
-                    key={r.id}
-                    onClick={() => {
-                      const params = new URLSearchParams()
-                      if (r.provider) params.set('provider', r.provider)
-                      if (r.model) params.set('model', r.model)
-                      params.set('reviewId', String(r.id))
-                      navigate(`/review/${r.owner}/${r.repo}/${r.pull_number}?${params.toString()}`)
-                    }}
-                    className="bg-gray-800 rounded p-3 cursor-pointer hover:bg-gray-750 transition-colors"
-                  >
-                    <div className="text-white text-sm font-medium truncate">
-                      {r.owner}/{r.repo}#{r.pull_number}
-                    </div>
-                    <div className="text-gray-400 text-xs mt-1 truncate">{r.pr_title}</div>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className={`px-1.5 py-0.5 rounded text-xs text-white ${
-                        r.risk_level === 'high' ? 'bg-red-600'
-                          : r.risk_level === 'medium' ? 'bg-yellow-600'
-                          : 'bg-green-600'
-                      }`}>
-                        {r.risk_level === 'high' ? '高' : r.risk_level === 'medium' ? '中' : '低'}
-                      </span>
-                      <span className="text-gray-500 text-xs">{r.issue_count} 问题</span>
-                      <span className="text-gray-600 text-xs">{formatLocalTime(r.created_at)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <MonitorPanel status={schedulerStatus} onToggle={toggleScheduler} />
+            <RecentReviews reviews={recentReviews} />
           </div>
         </div>
       </main>

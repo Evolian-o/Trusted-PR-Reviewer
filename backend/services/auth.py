@@ -1,4 +1,5 @@
 import os
+import time
 
 import httpx
 
@@ -8,6 +9,7 @@ GITHUB_REDIRECT_URI = os.environ.get("GITHUB_REDIRECT_URI", "http://localhost:80
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
 
 _auth_state: dict | None = None
+TOKEN_MAX_AGE_SECONDS = 8 * 3600  # 8 小时后校验一次
 
 
 def get_token() -> str | None:
@@ -26,8 +28,40 @@ def is_authenticated() -> bool:
     return _auth_state is not None and "token" in _auth_state
 
 
+def is_token_expired() -> bool:
+    """Returns True if the token is old enough to warrant re-verification"""
+    if _auth_state is None:
+        return True
+    issued = _auth_state.get("issued_at", 0)
+    return (time.time() - issued) > TOKEN_MAX_AGE_SECONDS
+
+
+async def verify_token() -> bool:
+    """Quick token validity check against GitHub API"""
+    token = get_token()
+    if not token:
+        return False
+    try:
+        async with httpx.AsyncClient(verify=False) as client:
+            resp = await client.get(
+                "https://api.github.com/user",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            return resp.status_code == 200
+    except Exception:
+        return False
+
+
 def get_user_info() -> dict | None:
-    return _auth_state
+    if _auth_state is None:
+        return None
+    # 去除内部字段后返回
+    return {
+        "user_id": _auth_state.get("user_id"),
+        "user_login": _auth_state.get("user_login"),
+        "avatar_url": _auth_state.get("avatar_url", ""),
+        "token_age_seconds": int(time.time() - _auth_state.get("issued_at", 0)),
+    }
 
 
 def clear_auth() -> None:
@@ -42,6 +76,7 @@ def _set_auth(token: str, user_info: dict) -> None:
         "user_id": user_info["id"],
         "user_login": user_info["login"],
         "avatar_url": user_info.get("avatar_url", ""),
+        "issued_at": time.time(),
     }
 
 

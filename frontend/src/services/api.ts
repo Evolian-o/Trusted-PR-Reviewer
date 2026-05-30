@@ -1,7 +1,27 @@
 import type { ReviewProgress, ReviewResult, ProviderInfo, CustomProviderInput } from '../types/review'
 
+export async function checkAuthStatus(): Promise<{
+  authenticated: boolean
+  login?: string
+  avatar_url?: string
+  token_expired?: boolean
+}> {
+  const resp = await fetch('/api/auth/status')
+  return resp.json()
+}
+
+export async function apiFetch(url: string, options?: RequestInit): Promise<Response> {
+  const resp = await fetch(url, options)
+  if (resp.status === 401) {
+    // Token 过期或无效，跳转登录页
+    window.location.href = '/?expired=1'
+    throw new Error('登录已过期')
+  }
+  return resp
+}
+
 export async function fetchProviders(): Promise<ProviderInfo[]> {
-  const resp = await fetch('/api/providers')
+  const resp = await apiFetch('/api/providers')
   const data = await resp.json()
   return data.providers || []
 }

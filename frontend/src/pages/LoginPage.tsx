@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 
 export default function LoginPage() {
   const [checking, setChecking] = useState(true)
+  const [searchParams] = useSearchParams()
+  const expired = searchParams.get('expired') === '1'
   const navigate = useNavigate()
 
   useEffect(() => {
     fetch('/api/auth/status')
       .then((r) => r.json())
       .then((data) => {
-        if (data.authenticated) {
+        if (data.authenticated && !data.token_expired) {
           navigate('/dashboard', { replace: true })
         }
       })
@@ -38,7 +40,12 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
       <div className="text-center">
         <h1 className="text-4xl font-bold text-white mb-3">AI PR Review</h1>
-        <p className="text-gray-400 mb-8">登录 GitHub 自动监控仓库 PR</p>
+        <p className="text-gray-400 mb-4">登录 GitHub 自动监控仓库 PR</p>
+        {expired && (
+          <p className="text-yellow-400 text-sm mb-4 bg-yellow-400/10 rounded-lg py-2 px-4 inline-block">
+            登录已过期，请重新授权
+          </p>
+        )}
         <button
           onClick={handleLogin}
           className="inline-flex items-center gap-3 px-8 py-3 bg-[#238636] hover:bg-[#2ea043] text-white font-medium rounded-lg transition-colors text-lg"
