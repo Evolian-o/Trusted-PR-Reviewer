@@ -123,7 +123,7 @@ async def run_review_pipeline(
                 sec_text += token_text
                 yield {"event": "token", "data": token_text}
                 await asyncio.sleep(0)
-            _, security_issues, _ = parse_llm_output(sec_text, fc.filename)
+            _, security_issues, _, _ = parse_llm_output(sec_text, fc.filename)
             # 安全检查的 issues 统一标记为 security 类别
             for si in security_issues:
                 if si.category not in ("bug", "security", "performance", "style"):

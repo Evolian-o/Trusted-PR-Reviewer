@@ -32,6 +32,9 @@ async def init_db():
             "CREATE INDEX IF NOT EXISTS idx_reviews_owner_repo ON reviews(owner, repo)"
         )
 
+        # 迁移：旧表可能缺少 share_token 列
+        await _migrate_add_column(db, "reviews", "share_token", "TEXT DEFAULT ''")
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS monitored_repos (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -105,8 +108,8 @@ async def save_review(pr_url: str, provider: str, model: str | None, result) -> 
             INSERT INTO reviews (
                 owner, repo, pull_number, pr_title, pr_url,
                 provider, model, files_changed, additions, deletions,
-                risk_level, issue_count, suggestion_count, share_token, result_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                risk_level, issue_count, suggestion_count, share_token, result_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'))
             """,
             (
                 result.owner,
@@ -199,7 +202,7 @@ async def add_monitored_repo(user_id: int, owner: str, repo: str) -> int:
     await init_db()
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
-            "INSERT OR IGNORE INTO monitored_repos (user_id, owner, repo) VALUES (?, ?, ?)",
+            "INSERT OR IGNORE INTO monitored_repos (user_id, owner, repo, created_at) VALUES (?, ?, ?, datetime('now', 'localtime'))",
             (user_id, owner, repo),
         )
         await db.commit()
@@ -355,8 +358,8 @@ async def create_custom_provider(user_id: int, data: dict) -> int:
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
             """INSERT INTO custom_providers
-               (user_id, name, display_name, base_url, api_key_enc, default_model, timeout)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               (user_id, name, display_name, base_url, api_key_enc, default_model, timeout, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now', 'localtime'), datetime('now', 'localtime'))""",
             (
                 user_id,
                 data["name"],
@@ -422,3 +425,13 @@ async def get_repo_stats(owner: str, repo: str, limit: int = 5) -> list[dict]:
             (owner, repo, limit),
         )
         return [dict(row) for row in await cursor.fetchall()]
+
+
+# ── 数据库迁移工具 ──────────────────────────────────────────
+
+async def _migrate_add_column(db: aiosqlite.Connection, table: str, column: str, col_def: str):
+    """如果列不存在则添加"""
+    cursor = await db.execute(f"PRAGMA table_info({table})")
+    existing = [row[1] for row in await cursor.fetchall()]
+    if column not in existing:
+        await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}")
