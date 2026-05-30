@@ -1,7 +1,13 @@
 import json
+import logging
 import re
 
 from models.review import Issue, FileReview, ReviewResult
+
+logger = logging.getLogger(__name__)
+
+_extract_success = 0
+_extract_failure = 0
 
 
 VALID_SEVERITIES = {"critical", "high", "medium", "low"}
@@ -91,8 +97,15 @@ def parse_llm_output(text: str, filename: str) -> tuple[str, list[Issue], list[s
     data = _extract_json_from_text(text)
 
     if data is None:
+        global _extract_failure
+        _extract_failure += 1
+        logger.warning("JSON 提取失败: filename=%s text_len=%d preview=%s",
+                       filename, len(text), text[:150].replace("\n", "\\n"))
         suggestions = _extract_suggestions_from_text(text)
         return (text[:300].strip(), [], suggestions, {})
+
+    global _extract_success
+    _extract_success += 1
 
     summary = data.get("summary", "") or ""
     raw_issues = data.get("issues", []) or []
@@ -224,6 +237,10 @@ def build_category_summary(issues: list[Issue], suggestions: list[str]) -> str:
             lines.append(f"  {i}. {s}")
 
     return "\n".join(lines)
+
+
+def get_extraction_stats() -> dict:
+    return {"success": _extract_success, "failure": _extract_failure}
 
 
 def build_review_result(
