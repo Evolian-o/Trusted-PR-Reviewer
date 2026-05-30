@@ -24,14 +24,22 @@ _OUTPUT_FORMAT = """## 输出格式
       "priority": "must_fix|should_fix|nice_to_fix"
     }
   ],
-  "suggestions": ["整体优化建议（不超过3条）"]
+  "suggestions": ["整体优化建议（不超过3条）"],
+  "scores": {
+    "overall": 75,
+    "security": 80,
+    "bug": 70,
+    "performance": 72,
+    "style": 78
+  }
 }
 **重要约束**：
 - confidence 必须是 0-100 的整数，≥80=非常确定，50-79=合理推测，<50=不确定（宁可漏报不要误报）
 - priority: must_fix=必须修复（安全漏洞/逻辑错误）, should_fix=应当修复（重大性能/规范问题）, nice_to_fix=可选优化
 - current_code 和 proposed_code 必须是从变更中摘录的真实代码片段，不能是虚构的
 - 每个 issue 的 suggestion 说明"为什么不好"和"怎样改"，proposed_code 展示改动后的效果
-- 如果没有发现问题，issues 返回空数组 []。"""
+- scores 中每个维度都是 0-100 的整数，overall 是综合评分（不是平均值，而是综合评估）
+- 如果没有发现问题，issues 返回空数组 []，scores 各维度给高分（90+）。"""
 
 
 def build_system_prompt(dimensions: list[str] | None = None) -> str:

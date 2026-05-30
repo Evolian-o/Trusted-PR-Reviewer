@@ -43,6 +43,7 @@ class FileReview(BaseModel):
     summary: str = ""
     issues: list[Issue] = []
     suggestions: list[str] = []
+    scores: dict = {}  # { overall, security, bug, performance, style } 0-100
 
 
 class ReviewResult(BaseModel):

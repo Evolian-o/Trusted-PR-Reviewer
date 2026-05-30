@@ -163,13 +163,14 @@ async def run_review_pipeline(
             continue
 
         try:
-            summary, issues, suggestions = parse_llm_output(full_text, fc.filename)
+            summary, issues, suggestions, scores = parse_llm_output(full_text, fc.filename)
             all_issues = security_issues + list(issues)
             file_reviews.append(FileReview(
                 file=fc.filename,
                 summary=summary,
                 issues=all_issues,
                 suggestions=suggestions,
+                scores=scores,
             ))
         except Exception as e:
             yield {"event": "review_error", "data": f"解析评审结果失败 [{fc.filename}]: {e}"}

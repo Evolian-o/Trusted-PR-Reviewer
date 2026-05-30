@@ -83,24 +83,25 @@ def _extract_suggestions_from_text(text: str) -> list[str]:
     return suggestions[:5]  # 最多 5 条
 
 
-def parse_llm_output(text: str, filename: str) -> tuple[str, list[Issue], list[str]]:
-    """从 LLM 原始输出中提取 summary / issues / suggestions"""
+def parse_llm_output(text: str, filename: str) -> tuple[str, list[Issue], list[str], dict]:
+    """从 LLM 原始输出中提取 summary / issues / suggestions / scores"""
     if not text or not text.strip():
-        return ("LLM 返回为空", [], [])
+        return ("LLM 返回为空", [], [], {})
 
     data = _extract_json_from_text(text)
 
     if data is None:
-        # 完全无法解析 JSON，尝试从文本中提取有用信息
         suggestions = _extract_suggestions_from_text(text)
-        return (text[:300].strip(), [], suggestions)
+        return (text[:300].strip(), [], suggestions, {})
 
     summary = data.get("summary", "") or ""
     raw_issues = data.get("issues", []) or []
     suggestions = data.get("suggestions", []) or []
+    raw_scores = data.get("scores", {}) or {}
 
     issues = _normalize_issues(raw_issues, filename)
-    return summary, issues, suggestions
+    scores = _normalize_scores(raw_scores)
+    return summary, issues, suggestions, scores
 
 
 def _normalize_issues(raw_data: list[dict], filename: str) -> list[Issue]:
@@ -133,6 +134,19 @@ def _clamp_confidence(val) -> int:
 def _sanitize_priority(raw: str) -> str:
     raw = (raw or "").lower().strip()
     return raw if raw in ("must_fix", "should_fix", "nice_to_fix") else "should_fix"
+
+
+def _normalize_scores(raw: dict) -> dict:
+    """标准化评分字典，确保每个维度都是 0-100 的整数"""
+    dims = ["overall", "security", "bug", "performance", "style"]
+    result: dict = {}
+    for dim in dims:
+        try:
+            val = int(raw.get(dim, 0))
+            result[dim] = max(0, min(100, val))
+        except (TypeError, ValueError):
+            result[dim] = 0
+    return result
 
 
 def determine_risk_level(issues: list[Issue]) -> str:
@@ -231,7 +245,17 @@ def build_review_result(
     risk_level = determine_risk_level(all_issues)
     category_text = build_category_summary(all_issues, all_suggestions)
 
-    # 头部概览
+    # 聚合评分：取所有文件评分的平均值
+    dims = ["overall", "security", "bug", "performance", "style"]
+    agg_scores: dict = {}
+    scored_files = [fr for fr in file_reviews if fr.scores]
+    if scored_files:
+        for dim in dims:
+            vals = [fr.scores.get(dim, 0) for fr in scored_files if dim in fr.scores]
+            agg_scores[dim] = round(sum(vals) / len(vals)) if vals else 0
+    else:
+        agg_scores = {dim: 0 for dim in dims}
+
     risk_cn = RISK_LABELS.get(risk_level, risk_level)
     header = (
         f"审查 {len(file_reviews)} 个文件，+{additions}/-{deletions}，"
@@ -251,4 +275,5 @@ def build_review_result(
         file_reviews=file_reviews,
         issues=all_issues,
         suggestions=all_suggestions,
+        scores=agg_scores,
     )

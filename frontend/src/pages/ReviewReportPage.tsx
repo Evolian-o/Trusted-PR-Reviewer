@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
-import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { streamReview, fetchCachedReview } from '../services/api'
 import type { ReviewPhase, ReviewProgress, ReviewResult, FileInfo, ModelInfo } from '../types/review'
 import PRInfoBar from '../components/PRInfoBar'
@@ -9,10 +9,16 @@ import SummaryCard from '../components/SummaryCard'
 import IssueList from '../components/IssueList'
 import ExportToolbar from '../components/ExportToolbar'
 
+const NAV_ITEMS = [
+  { id: 'overview', label: '概览' },
+  { id: 'code-review', label: '代码审查' },
+  { id: 'issues-summary', label: '问题汇总' },
+  { id: 'export', label: '导出' },
+]
+
 export default function ReviewReportPage() {
   const { owner, repo, pr } = useParams()
   const [searchParams] = useSearchParams()
-  const navigate = useNavigate()
 
   const [phase, setPhase] = useState<ReviewPhase>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -23,7 +29,13 @@ export default function ReviewReportPage() {
   const [currentPatch, setCurrentPatch] = useState<FileInfo | null>(null)
   const [allPatches, setAllPatches] = useState<Map<string, FileInfo>>(new Map())
   const [streamingFileIdx, setStreamingFileIdx] = useState(0)
+  const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set())
+  const [showScrollTop, setShowScrollTop] = useState(false)
+  const [activeNav, setActiveNav] = useState('overview')
   const reviewSectionRef = useRef<HTMLDivElement>(null)
+  const overviewRef = useRef<HTMLDivElement>(null)
+  const codeReviewRef = useRef<HTMLDivElement>(null)
+  const exportRef = useRef<HTMLDivElement>(null)
 
   const prUrl = `https://github.com/${owner}/${repo}/pull/${pr}`
   const provider = searchParams.get('provider') || 'deepseek'
@@ -31,6 +43,32 @@ export default function ReviewReportPage() {
   const dims = searchParams.get('dims')
   const reviewId = searchParams.get('reviewId')
   const [fromCache, setFromCache] = useState(false)
+
+  // 监听滚动：FAB 可见性 + 导航高亮
+  useEffect(() => {
+    const onScroll = () => {
+      setShowScrollTop(window.scrollY > 400)
+      // 简单的导航高亮：检查哪个区块在视口中
+      const sections = [
+        { id: 'overview', ref: overviewRef },
+        { id: 'code-review', ref: codeReviewRef },
+        { id: 'issues-summary', ref: null }, // handled by id in IssueList
+        { id: 'export', ref: exportRef },
+      ]
+      for (const s of sections) {
+        const el = s.ref?.current || document.getElementById(s.id)
+        if (el) {
+          const rect = el.getBoundingClientRect()
+          if (rect.top <= 120 && rect.bottom >= 120) {
+            setActiveNav(s.id)
+            break
+          }
+        }
+      }
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [phase])
 
   // 从缓存加载已有评审
   const loadCachedReview = useCallback(async (id: number) => {
@@ -70,7 +108,6 @@ export default function ReviewReportPage() {
         }
       },
       (_token) => {
-        // token 只在后台累积，不展示原始流式输出
         setPhase('streaming')
       },
       (r) => {
@@ -96,8 +133,21 @@ export default function ReviewReportPage() {
     return close
   }, [prUrl, provider, model, reviewId, loadCachedReview])
 
-  // 将 allPatches 转为数组（按收集顺序）
   const patchList = useMemo(() => Array.from(allPatches.values()), [allPatches])
+
+  const toggleCollapse = (filename: string) => {
+    setCollapsedFiles((prev) => {
+      const next = new Set(prev)
+      if (next.has(filename)) next.delete(filename)
+      else next.add(filename)
+      return next
+    })
+  }
+
+  const scrollTo = (id: string) => {
+    const el = document.getElementById(id)
+    el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
   return (
     <div className="min-h-screen bg-gray-900 py-8 px-4">
@@ -173,7 +223,6 @@ export default function ReviewReportPage() {
         {/* 评审中：全宽代码对比 + AI 分析状态 */}
         {(phase === 'progress' || phase === 'streaming') && (
           <div ref={reviewSectionRef} className="space-y-4">
-            {/* 代码变更对比 — 全宽 */}
             <div>
               <h3 className="text-sm font-medium text-gray-400 mb-2 uppercase tracking-wide flex items-center gap-2">
                 代码变更对比
@@ -197,7 +246,6 @@ export default function ReviewReportPage() {
               )}
             </div>
 
-            {/* 文件进度指示 */}
             {progress && progress.total > 1 && (
               <div className="flex items-center gap-2 text-xs text-gray-500">
                 <span>已评审文件:</span>
@@ -223,105 +271,166 @@ export default function ReviewReportPage() {
 
         {/* Done: 完整报告 */}
         {phase === 'done' && result && (
-          <div className="space-y-6">
-            <PRInfoBar result={result} />
-            <SummaryCard result={result} />
+          <>
+            {/* 粘性导航栏 */}
+            <nav className="sticky top-0 z-30 -mx-4 px-4 bg-gray-900/95 backdrop-blur border-b border-gray-700 py-2.5 flex items-center gap-1 overflow-x-auto">
+              {NAV_ITEMS.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => scrollTo(item.id)}
+                  className={`px-3 py-1.5 rounded text-sm whitespace-nowrap transition-colors ${
+                    activeNav === item.id
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-400 hover:text-gray-200 hover:bg-gray-800'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </nav>
 
-            {/* 逐文件：代码对比 + 问题 */}
-            {result.file_reviews.length > 0 && (
-              <div className="space-y-8">
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                  代码审查详情
-                  <span className="text-sm font-normal text-gray-400">
-                    ({result.file_reviews.length} 个文件)
-                  </span>
-                </h2>
-                {fromCache && (
-                  <p className="text-xs text-gray-500 bg-gray-800 border border-gray-700 rounded px-3 py-2">
-                    缓存数据不含 diff 补丁，仅展示评审结果。如需查看完整 diff，请点击「重新评审」。
-                  </p>
-                )}
-
-                {result.file_reviews.map((fr) => {
-                  const patch = allPatches.get(fr.file)
-                  return (
-                    <section key={fr.file}>
-                      {/* 代码 diff（自带文件头：文件名 + 语言 + +/- 统计） */}
-                      {patch ? (
-                        <DiffViewer
-                          filename={patch.filename}
-                          language={patch.language}
-                          patch={patch.patch}
-                        />
-                      ) : (
-                        <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-3">
-                          <span className="text-blue-400 font-mono text-sm">{fr.file}</span>
-                          <p className="text-gray-500 text-xs mt-1">（无 diff 数据）</p>
-                        </div>
-                      )}
-
-                      {/* 该文件的问题列表 */}
-                      {fr.issues.length > 0 && (
-                        <div className="ml-2 pl-4 border-l-2 border-gray-700 space-y-2">
-                          {fr.issues.map((issue, i) => (
-                            <div
-                              key={i}
-                              className="bg-gray-850 border border-gray-700 rounded-lg p-4"
-                            >
-                              <div className="flex items-center gap-2 mb-2">
-                                <span
-                                  className={`px-1.5 py-0.5 rounded text-xs font-bold text-white ${
-                                    issue.severity === 'critical'
-                                      ? 'bg-red-600'
-                                      : issue.severity === 'high'
-                                        ? 'bg-orange-600'
-                                        : issue.severity === 'medium'
-                                          ? 'bg-yellow-600'
-                                          : 'bg-gray-600'
-                                  }`}
-                                >
-                                  {issue.severity.toUpperCase()}
-                                </span>
-                                <span className="text-xs text-gray-500 bg-gray-700 px-1.5 py-0.5 rounded">
-                                  {issue.category}
-                                </span>
-                                {issue.line && (
-                                  <span className="text-xs text-gray-600 font-mono">
-                                    :{issue.line}
-                                  </span>
-                                )}
-                              </div>
-                              <p className="text-gray-300 text-sm mb-2">{issue.description}</p>
-                              {issue.suggestion && (
-                                <div className="bg-gray-900 border border-gray-600 rounded p-3">
-                                  <span className="text-xs text-green-400 font-medium">
-                                    建议修改
-                                  </span>
-                                  <pre className="text-gray-300 text-sm mt-1.5 whitespace-pre-wrap font-mono leading-relaxed">
-                                    {issue.suggestion}
-                                  </pre>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {fr.issues.length === 0 && fr.summary && (
-                        <p className="text-gray-500 text-sm ml-2 pl-4 border-l-2 border-gray-700 py-1">
-                          {fr.summary}
-                        </p>
-                      )}
-                    </section>
-                  )
-                })}
+            <div className="space-y-6">
+              <div ref={overviewRef} id="overview" className="scroll-mt-16">
+                <PRInfoBar result={result} />
               </div>
-            )}
+              <SummaryCard result={result} />
 
-            {/* 底部：问题汇总 */}
-            <IssueList issues={result.issues} />
-            <ExportToolbar result={result} />
-          </div>
+              {/* 逐文件：代码对比 + 问题 */}
+              {result.file_reviews.length > 0 && (
+                <div ref={codeReviewRef} id="code-review" className="space-y-4 scroll-mt-16">
+                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                    代码审查详情
+                    <span className="text-sm font-normal text-gray-400">
+                      ({result.file_reviews.length} 个文件)
+                    </span>
+                  </h2>
+                  {fromCache && (
+                    <p className="text-xs text-gray-500 bg-gray-800 border border-gray-700 rounded px-3 py-2">
+                      缓存数据不含 diff 补丁，仅展示评审结果。如需查看完整 diff，请点击「重新评审」。
+                    </p>
+                  )}
+
+                  {result.file_reviews.map((fr) => {
+                    const patch = allPatches.get(fr.file)
+                    const isCollapsed = collapsedFiles.has(fr.file)
+                    const inlineIssues = new Map<number, typeof fr.issues>()
+                    const orphanIssues: typeof fr.issues = []
+                    for (const issue of fr.issues) {
+                      if (issue.line != null) {
+                        const arr = inlineIssues.get(issue.line)
+                        if (arr) arr.push(issue)
+                        else inlineIssues.set(issue.line, [issue])
+                      } else {
+                        orphanIssues.push(issue)
+                      }
+                    }
+
+                    return (
+                      <section key={fr.file} className="border border-gray-700 rounded-lg overflow-hidden">
+                        {/* 文件头：可折叠 */}
+                        <button
+                          onClick={() => toggleCollapse(fr.file)}
+                          className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-800 hover:bg-gray-750 transition-colors text-left"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={`text-xs transition-transform ${isCollapsed ? '' : 'rotate-90'}`}>
+                              ▶
+                            </span>
+                            <span className="text-sm font-mono text-blue-400 truncate">{fr.file}</span>
+                            {fr.issues.length > 0 && (
+                              <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${
+                                fr.issues.some((i) => i.priority === 'must_fix')
+                                  ? 'bg-red-700 text-red-100'
+                                  : fr.issues.some((i) => i.severity === 'high' || i.severity === 'critical')
+                                    ? 'bg-orange-700 text-orange-100'
+                                    : 'bg-yellow-700 text-yellow-100'
+                              }`}>
+                                {fr.issues.length} 问题
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs text-gray-500 ml-2 flex-shrink-0">
+                            {fr.summary ? fr.summary.slice(0, 50) + (fr.summary.length > 50 ? '…' : '') : ''}
+                          </span>
+                        </button>
+
+                        {!isCollapsed && (
+                          <div className="p-1">
+                            {patch ? (
+                              <DiffViewer
+                                filename={patch.filename}
+                                language={patch.language}
+                                patch={patch.patch}
+                                inlineIssues={inlineIssues.size > 0 ? inlineIssues : undefined}
+                              />
+                            ) : (
+                              <div className="bg-gray-800 rounded p-4 m-1">
+                                <span className="text-blue-400 font-mono text-sm">{fr.file}</span>
+                                <p className="text-gray-500 text-xs mt-1">（无 diff 数据）</p>
+                              </div>
+                            )}
+
+                            {orphanIssues.length > 0 && (
+                              <div className="mx-3 mb-2 pl-4 border-l-2 border-gray-700 space-y-2">
+                                {orphanIssues.map((issue, i) => {
+                                  const sevBg: Record<string, string> = {
+                                    critical: 'border-red-500 bg-red-900/20',
+                                    high: 'border-orange-500 bg-orange-900/20',
+                                    medium: 'border-yellow-500 bg-yellow-900/20',
+                                    low: 'border-gray-500 bg-gray-800',
+                                  }
+                                  return (
+                                    <div key={i} className={`border-l-4 ${sevBg[issue.severity] || sevBg.low} rounded p-3`}>
+                                      <div className="flex items-center gap-2 mb-1.5">
+                                        <span className={`px-1.5 py-0.5 rounded text-xs font-bold text-white ${
+                                          issue.severity === 'critical' ? 'bg-red-600' :
+                                          issue.severity === 'high' ? 'bg-orange-600' :
+                                          issue.severity === 'medium' ? 'bg-yellow-600' : 'bg-gray-600'
+                                        }`}>
+                                          {issue.severity.toUpperCase()}
+                                        </span>
+                                        <span className="text-xs text-gray-500 bg-gray-700 px-1.5 py-0.5 rounded">
+                                          {issue.category}
+                                        </span>
+                                      </div>
+                                      <p className="text-gray-300 text-sm">{issue.description}</p>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+
+                            {fr.issues.length === 0 && fr.summary && (
+                              <p className="text-gray-500 text-sm mx-3 mb-2 pl-4 border-l-2 border-gray-700 py-1">
+                                {fr.summary}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </section>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* 底部：问题汇总 */}
+              <IssueList issues={result.issues} />
+              <div ref={exportRef} id="export" className="scroll-mt-16">
+                <ExportToolbar result={result} />
+              </div>
+            </div>
+
+            {/* 回到顶部 FAB */}
+            {showScrollTop && (
+              <button
+                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                className="fixed bottom-6 right-6 w-10 h-10 bg-blue-600 hover:bg-blue-500 text-white rounded-full shadow-lg flex items-center justify-center transition-all z-40"
+                title="回到顶部"
+              >
+                ↑
+              </button>
+            )}
+          </>
         )}
       </div>
     </div>
