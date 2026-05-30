@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './contexts/AuthContext'
+import ErrorBoundary from './components/ErrorBoundary'
 import type { ReactNode } from 'react'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
@@ -24,7 +25,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
 
 export default function App() {
   return (
-    <div className="min-h-screen">
+    <ErrorBoundary>
       <Routes>
         <Route path="/" element={<LoginPage />} />
         <Route path="/dashboard" element={<RequireAuth><DashboardPage /></RequireAuth>} />
@@ -34,6 +35,6 @@ export default function App() {
         <Route path="/history" element={<RequireAuth><HistoryPage /></RequireAuth>} />
         <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
       </Routes>
-    </div>
+    </ErrorBoundary>
   )
 }
