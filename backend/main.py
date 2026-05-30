@@ -2,12 +2,16 @@ import json
 import asyncio
 import logging
 import os
+from pathlib import Path
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[logging.StreamHandler()],
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler(Path(__file__).parent / "backend.log", encoding="utf-8"),
+    ],
 )
 
 from dotenv import load_dotenv
@@ -18,19 +22,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from sse_starlette.sse import EventSourceResponse
 
-from services.github_adapter import parse_pr_url, fetch_pr
-from services.chunking import chunk_pr as smart_chunk_pr
-from services.prompt_builder import SYSTEM_PROMPT, build_user_prompt
-from services.llm_providers.base import ReviewPrompt
 from services.llm_providers.factory import (
     get_provider, list_providers_with_meta, load_custom_providers,
     register_custom_provider, unregister_custom_provider, is_builtin,
     get_provider_info,
 )
 from services.llm_providers.crypto import encrypt, decrypt
-from services.result_formatter import parse_llm_output, build_review_result
+from services.rate_limiter import RateLimiter
 from services.database import (
-    save_review, list_reviews, get_review, delete_review,
+    list_reviews, get_review, delete_review,
     add_monitored_repo, remove_monitored_repo, list_monitored_repos,
     save_email_config, get_email_config, get_all_settings, get_setting, set_setting,
     list_custom_providers as db_list_custom_providers,
@@ -41,11 +41,12 @@ from services.database import (
 )
 from services.auth import (
     get_login_url, complete_auth, is_authenticated, clear_auth, get_user_info,
-    get_token, get_user_id,
+    get_token, get_user_id, is_token_expired,
 )
-from models.review import FileReview
 from services.scheduler import start_scheduler, stop_scheduler, get_scheduler_status, restore_scheduler
-from services.email_notifier import send_review_notification
+
+# 评审端点频率限制: 每分钟最多 10 次
+_review_limiter = RateLimiter(max_requests=10, window_seconds=60)
 from contextlib import asynccontextmanager
 import httpx
 
@@ -81,6 +82,23 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc: Exception):
+    """统一异常处理 — 所有未捕获异常转 JSON 错误响应"""
+    logger = logging.getLogger("main")
+    logger.exception(f"未处理异常: {request.method} {request.url.path} — {exc}")
+    from fastapi.responses import JSONResponse
+    status = 500
+    if isinstance(exc, ValueError):
+        status = 400
+    elif isinstance(exc, RuntimeError):
+        status = 500
+    return JSONResponse(
+        status_code=status,
+        content={"error": str(exc) or type(exc).__name__},
+    )
+
+
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
@@ -111,11 +129,14 @@ async def auth_callback(code: str = Query(...)):
 async def auth_status():
     if is_authenticated():
         info = get_user_info()
+        expired = is_token_expired()
         return {
             "authenticated": True,
-            "login": info["user_login"],
+            "login": info.get("user_login", ""),
             "avatar_url": info.get("avatar_url", ""),
-            "user_id": info["user_id"],
+            "user_id": info.get("user_id"),
+            "token_expired": expired,
+            "token_age_seconds": info.get("token_age_seconds", 0),
         }
     return {"authenticated": False}
 
@@ -455,138 +476,20 @@ async def provider_test(name: str, data: dict | None = None):
 
 
 async def event_stream(pr_url: str, provider_name: str, model: str | None):
-    """SSE 事件流生成器：拉 PR → 分片 → LLM 逐文件评审 → 推送结果"""
+    """SSE 事件流 — 薄包装，委托给 ReviewOrchestrator"""
+    from services.review_orchestrator import run_review_pipeline
+
+    if not _review_limiter.is_allowed("review"):
+        yield {"event": "review_error", "data": "请求过于频繁，请稍后再试（每分钟最多 10 次）"}
+        return
+
     try:
-        # Step 1: 解析 URL
-        yield {"event": "status", "data": "正在解析 PR URL..."}
-        owner, repo, pull_number = parse_pr_url(pr_url)
-
-        # Step 2: 获取 PR
-        yield {"event": "status", "data": f"正在获取 PR 信息: {owner}/{repo}#{pull_number}"}
-        pr = await fetch_pr(owner, repo, pull_number, token=get_token())
-        yield {
-            "event": "progress",
-            "data": json.dumps({
-                "phase": "fetching",
-                "current": 0,
-                "total": len(pr.files),
-                "message": f"已获取 {len(pr.files)} 个文件",
-            }),
-        }
-
-        # Step 3: 按文件智能分片
-        user_id = get_user_id() or 0
-        await load_custom_providers(user_id)
-        max_chars = int(await get_setting(user_id, "chunk_max_chars", "8000"))
-        merge_max_chars = int(await get_setting(user_id, "chunk_merge_max_chars", "6000"))
-        max_lines = int(await get_setting(user_id, "chunk_max_lines", "2000"))
-        strategy = await get_setting(user_id, "chunk_strategy", "auto")
-
-        chunks = await smart_chunk_pr(
-            pr, token=get_token(),
-            max_chars=max_chars,
-            merge_max_chars=merge_max_chars,
-            fallback_max_lines=max_lines,
-            strategy=strategy,
-        )
-        yield {"event": "status", "data": f"分片完成，共 {len(chunks)} 个片段待评审"}
-
-        # Step 4: 获取 Provider
-        provider = get_provider(provider_name)
-        actual_model = model or provider.default_model
-        print(f"[评审] 提供商={provider_name}  模型={actual_model}", flush=True)
-        yield {
-            "event": "model_info",
-            "data": json.dumps({"provider": provider_name, "model": actual_model}),
-        }
-
-        # Step 5: 逐个评审
-        file_reviews = []
-        for idx, fc in enumerate(chunks, start=1):
-            yield {
-                "event": "file_info",
-                "data": json.dumps({
-                    "filename": fc.filename,
-                    "language": fc.language,
-                    "patch": fc.patch or "",
-                }),
-            }
-            yield {
-                "event": "progress",
-                "data": json.dumps({
-                    "phase": "reviewing",
-                    "current": idx,
-                    "total": len(chunks),
-                    "file": fc.filename,
-                    "language": fc.language,
-                }),
-            }
-
-            user_prompt = build_user_prompt(pr, fc)
-            prompt = ReviewPrompt(system=SYSTEM_PROMPT, user=user_prompt)
-
-            full_text = ""
-            try:
-                async for token in provider.review(prompt, model=model):
-                    full_text += token
-                    yield {"event": "token", "data": token}
-                    await asyncio.sleep(0)
-            except Exception as e:
-                msg = str(e).strip() or f"{type(e).__name__}(无详细错误信息)"
-                yield {"event": "review_error", "data": f"LLM 调用失败 [{fc.filename}]: {msg}"}
-                continue
-
-            try:
-                summary, issues, suggestions = parse_llm_output(full_text, fc.filename)
-                file_reviews.append(FileReview(
-                    file=fc.filename,
-                    summary=summary,
-                    issues=issues,
-                    suggestions=suggestions,
-                ))
-            except Exception as e:
-                yield {"event": "review_error", "data": f"解析评审结果失败 [{fc.filename}]: {e}"}
-                continue
-
-            yield {
-                "event": "file_done",
-                "data": json.dumps({
-                    "file": fc.filename,
-                    "issues_count": len(issues),
-                    "progress": f"{idx}/{len(chunks)}",
-                }),
-            }
-
-        # Step 6: 汇总结果
-        result = build_review_result(
-            pr_title=pr.title,
-            owner=owner, repo=repo, pull_number=pull_number,
-            files_changed=len(pr.files),
-            additions=pr.additions, deletions=pr.deletions,
-            file_reviews=file_reviews,
-        )
-
-        # 持久化保存（必须在 yield done 之前，否则浏览器关连接后代码不执行）
-        logger = logging.getLogger("main")
-        try:
-            review_id = await save_review(pr_url, provider_name, model, result)
-            logger.info(f"评审已保存: ID={review_id} provider={provider_name} model={model}")
-        except Exception as e:
-            logger.error(f"保存评审记录失败: {e}")
-
-        # 邮件通知（同样必须在 done 之前）
-        try:
-            logger.info(f"正在发送邮件通知: {owner}/{repo}#{pull_number}")
-            await send_review_notification(owner, repo, pr.title, result)
-            logger.info(f"邮件通知已发送: {owner}/{repo}#{pull_number}")
-        except Exception as e:
-            logger.error(f"邮件通知失败: {e}")
-
-        yield {
-            "event": "done",
-            "data": result.model_dump_json(),
-        }
-
+        async for event in run_review_pipeline(
+            pr_url, provider_name, model,
+            token=get_token(),
+            user_id=get_user_id() or 0,
+        ):
+            yield event
     except ValueError as e:
         yield {"event": "review_error", "data": str(e) or "ValueError: 无详细错误信息"}
     except RuntimeError as e:

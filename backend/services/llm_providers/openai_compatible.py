@@ -1,8 +1,11 @@
 import json
 import asyncio
+import logging
 import aiohttp
 from collections.abc import AsyncIterator
 from .base import BaseLLMProvider, ReviewPrompt
+
+logger = logging.getLogger(__name__)
 
 
 class OpenAICompatibleProvider(BaseLLMProvider):
@@ -47,7 +50,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             raise RuntimeError(f"未配置 {self._name} 的 API Key")
 
         actual_model = model or self._default_model
-        print(f"[{self._name}] 发送 API 请求 → URL={self._base_url}/chat/completions  model={actual_model}", flush=True)
+        logger.info(f"[{self._name}] API 请求 → model={actual_model}")
         payload = {
             "model": actual_model,
             "messages": [

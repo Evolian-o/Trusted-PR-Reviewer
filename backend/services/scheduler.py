@@ -6,15 +6,8 @@ from services.database import (
     get_active_monitored_repos, update_monitor_sha, get_setting,
 )
 from services.github_client import github_get
-from services.github_adapter import fetch_pr
-from services.chunking import chunk_pr as smart_chunk_pr
-from services.prompt_builder import SYSTEM_PROMPT, build_user_prompt
-from services.llm_providers.base import ReviewPrompt
 from services.llm_providers.factory import get_provider
-from services.result_formatter import parse_llm_output, build_review_result
-from services.database import save_review
-from services.email_notifier import send_review_notification
-from models.review import FileReview
+from services.review_orchestrator import run_review_pipeline_sync
 
 logger = logging.getLogger("scheduler")
 
@@ -23,70 +16,26 @@ _user_id: int | None = None
 
 
 async def auto_review_pr(owner: str, repo: str, pull_number: int, pr_info: dict) -> None:
-    """对单个 PR 执行完整评审（无 SSE 流式输出），完成后保存到 DB 并发送邮件通知"""
+    """对单个 PR 执行完整评审（委托给 ReviewOrchestrator）"""
     try:
-        from services.llm_providers.factory import load_custom_providers
-        uid = _user_id or 0
-        if uid:
-            await load_custom_providers(uid)
-        pr = await fetch_pr(owner, repo, pull_number, token=get_token())
-
-        max_chars = int(await get_setting(uid, "chunk_max_chars", "8000"))
-        merge_max_chars = int(await get_setting(uid, "chunk_merge_max_chars", "6000"))
-        max_lines = int(await get_setting(uid, "chunk_max_lines", "2000"))
-        strategy = await get_setting(uid, "chunk_strategy", "auto")
-
-        chunks = await smart_chunk_pr(
-            pr, token=get_token(),
-            max_chars=max_chars,
-            merge_max_chars=merge_max_chars,
-            fallback_max_lines=max_lines,
-            strategy=strategy,
-        )
-
         provider = await _get_default_provider()
         model = await _get_default_model(provider.name)
+        pr_url = f"https://github.com/{owner}/{repo}/pull/{pull_number}"
+        uid = _user_id or 0
+
         logger.info(f"自动评审开始: {owner}/{repo}#{pull_number} provider={provider.name} model={model}")
 
-        file_reviews = []
-        for fc in chunks:
-            try:
-                user_prompt = build_user_prompt(pr, fc)
-                prompt = ReviewPrompt(system=SYSTEM_PROMPT, user=user_prompt)
-
-                full_text = ""
-                async for token in provider.review(prompt, model=model):
-                    full_text += token
-
-                summary, issues, suggestions = parse_llm_output(full_text, fc.filename)
-                file_reviews.append(FileReview(
-                    file=fc.filename,
-                    summary=summary,
-                    issues=issues,
-                    suggestions=suggestions,
-                ))
-            except Exception as e:
-                logger.error(f"评审文件失败 {fc.filename}: {e}")
-                continue
-
-        result = build_review_result(
-            pr_title=pr.title,
-            owner=owner, repo=repo, pull_number=pull_number,
-            files_changed=len(pr.files),
-            additions=pr.additions, deletions=pr.deletions,
-            file_reviews=file_reviews,
+        result_json = await run_review_pipeline_sync(
+            pr_url, provider.name, model,
+            token=get_token(), user_id=uid,
         )
 
-        pr_url = f"https://github.com/{owner}/{repo}/pull/{pull_number}"
-        await save_review(pr_url, provider.name, model, result)
-
-        # 邮件通知
-        try:
-            await send_review_notification(owner, repo, pr.title, result, user_id=_user_id)
-        except Exception as e:
-            logger.error(f"邮件发送异常: {e}")
-
-        logger.info(f"自动评审完成: {owner}/{repo}#{pull_number} 风险={result.risk_level} 问题={len(result.issues)}")
+        if result_json:
+            import json
+            result = json.loads(result_json)
+            logger.info(f"自动评审完成: {owner}/{repo}#{pull_number} 风险={result.get('risk_level')} 问题={len(result.get('issues', []))}")
+        else:
+            logger.warning(f"自动评审未产出结果: {owner}/{repo}#{pull_number}")
     except Exception as e:
         logger.error(f"自动评审失败 {owner}/{repo}#{pull_number}: {e}")
 

@@ -1,7 +1,10 @@
+import logging
 import os
 from collections.abc import AsyncIterator
 from openai import AsyncOpenAI
 from .base import BaseLLMProvider, ReviewPrompt
+
+logger = logging.getLogger(__name__)
 
 DOUBAO_API_URL = "https://ark.cn-beijing.volces.com/api/v3"
 
@@ -36,10 +39,7 @@ class DoubaoProvider(BaseLLMProvider):
             raise RuntimeError("未配置 doubao 的 API Key")
 
         actual_model = model or self._default_model
-        print(
-            f"[doubao] 发送 API 请求 → URL={self._base_url}/responses  model={actual_model}",
-            flush=True,
-        )
+        logger.info(f"[doubao] API 请求 → model={actual_model}")
 
         client = AsyncOpenAI(
             base_url=self._base_url,
