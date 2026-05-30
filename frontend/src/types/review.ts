@@ -37,12 +37,26 @@ export interface ReviewResult {
 }
 
 export interface ReviewProgress {
-  phase: 'fetching' | 'reviewing'
+  phase: 'fetching' | 'chunking' | 'reviewing' | 'reviewing_security' | 'reviewing_normal' | 'summarizing'
   current: number
   total: number
   file?: string
   language?: string
   message?: string
+}
+
+export interface TrendEntry {
+  id: number
+  pr_title: string
+  pull_number: number
+  risk_level: string
+  issue_count: number
+  suggestion_count: number
+  files_changed: number
+  additions: number
+  deletions: number
+  scores: Record<string, number>
+  created_at: string
 }
 
 export interface FileInfo {

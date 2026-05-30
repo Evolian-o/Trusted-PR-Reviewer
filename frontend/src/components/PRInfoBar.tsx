@@ -1,9 +1,9 @@
 import type { ReviewResult } from '../types/review'
 
 const RISK_COLORS: Record<string, string> = {
-  high: 'bg-red-600',
-  medium: 'bg-yellow-600',
-  low: 'bg-green-600',
+  high: 'bg-gradient-to-r from-red-600 to-red-500 shadow-lg shadow-red-600/25',
+  medium: 'bg-gradient-to-r from-yellow-600 to-orange-500 shadow-lg shadow-yellow-600/25',
+  low: 'bg-gradient-to-r from-green-600 to-emerald-500 shadow-lg shadow-green-600/25',
 }
 
 const DIM_LABELS: Record<string, string> = {

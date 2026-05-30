@@ -386,3 +386,23 @@ async def delete_custom_provider(user_id: int, name: str) -> bool:
         )
         await db.commit()
         return cursor.rowcount > 0
+
+
+# ── 趋势统计 ──────────────────────────────────────────────
+
+async def get_repo_stats(owner: str, repo: str, limit: int = 5) -> list[dict]:
+    """获取指定仓库最近 N 次评审的趋势数据"""
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """SELECT id, pr_title, pull_number, risk_level, issue_count,
+                      suggestion_count, files_changed, additions, deletions,
+                      result_json, created_at
+               FROM reviews
+               WHERE owner=? AND repo=?
+               ORDER BY created_at DESC
+               LIMIT ?""",
+            (owner, repo, limit),
+        )
+        return [dict(row) for row in await cursor.fetchall()]

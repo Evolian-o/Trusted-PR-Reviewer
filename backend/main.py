@@ -38,6 +38,7 @@ from services.database import (
     create_custom_provider as db_create_custom_provider,
     update_custom_provider as db_update_custom_provider,
     delete_custom_provider as db_delete_custom_provider,
+    get_repo_stats,
 )
 from services.auth import (
     get_login_url, complete_auth, is_authenticated, clear_auth, get_user_info,
@@ -541,6 +542,34 @@ async def history_delete(review_id: int):
     if not deleted:
         return {"error": "记录不存在"}, 404
     return {"status": "ok"}
+
+
+@app.get("/api/history/stats")
+async def history_stats(owner: str, repo: str):
+    """返回指定仓库最近 5 次评审的趋势数据"""
+    rows = await get_repo_stats(owner, repo, limit=5)
+    trend = []
+    for row in rows:
+        entry = {
+            "id": row["id"],
+            "pr_title": row["pr_title"],
+            "pull_number": row["pull_number"],
+            "risk_level": row["risk_level"],
+            "issue_count": row["issue_count"],
+            "suggestion_count": row["suggestion_count"],
+            "files_changed": row["files_changed"],
+            "additions": row["additions"],
+            "deletions": row["deletions"],
+            "created_at": row["created_at"],
+        }
+        # 尝试解析 scores
+        try:
+            data = json.loads(row["result_json"])
+            entry["scores"] = data.get("scores", {})
+        except (json.JSONDecodeError, TypeError):
+            entry["scores"] = {}
+        trend.append(entry)
+    return {"trend": trend}
 
 
 # ── 设置端点 ──────────────────────────────────────────────

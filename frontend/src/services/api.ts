@@ -1,4 +1,4 @@
-import type { ReviewProgress, ReviewResult, ProviderInfo, CustomProviderInput } from '../types/review'
+import type { ReviewProgress, ReviewResult, ProviderInfo, CustomProviderInput, TrendEntry } from '../types/review'
 
 export async function checkAuthStatus(): Promise<{
   authenticated: boolean
@@ -177,4 +177,10 @@ export function streamReview(
     console.log('[SSE] 关闭连接')
     close()
   }
+}
+
+export async function fetchRepoStats(owner: string, repo: string): Promise<TrendEntry[]> {
+  const resp = await fetch(`/api/history/stats?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`)
+  const data = await resp.json()
+  return data.trend || []
 }
