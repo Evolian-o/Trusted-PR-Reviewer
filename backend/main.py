@@ -53,10 +53,18 @@ import httpx
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 启动时尝试恢复调度器（从 DB 读取已配置的 user）
+    logger = logging.getLogger("main")
+    # 尝试恢复认证态
     try:
-        from services.database import get_all_settings
-        # 尝试从 DB 恢复最近活跃用户的调度器
+        from services.auth import restore_auth
+        restored = await restore_auth()
+        if restored:
+            logger.info("已从数据库恢复认证态")
+    except Exception:
+        pass
+
+    # 尝试恢复调度器（从 DB 读取已配置的 user）
+    try:
         from services.database import get_db
         db = await get_db()
         cursor = await db.execute(
@@ -475,7 +483,7 @@ async def provider_test(name: str, data: dict | None = None):
     return {"ok": ok} if ok else {"ok": False, "error": "连接失败"}
 
 
-async def event_stream(pr_url: str, provider_name: str, model: str | None):
+async def event_stream(pr_url: str, provider_name: str, model: str | None, dims: str | None):
     """SSE 事件流 — 薄包装，委托给 ReviewOrchestrator"""
     from services.review_orchestrator import run_review_pipeline
 
@@ -488,6 +496,7 @@ async def event_stream(pr_url: str, provider_name: str, model: str | None):
             pr_url, provider_name, model,
             token=get_token(),
             user_id=get_user_id() or 0,
+            dimensions=dims.split(",") if dims else None,
         ):
             yield event
     except ValueError as e:
@@ -503,8 +512,9 @@ async def review(
     url: str = Query(..., description="GitHub PR URL"),
     provider: str = Query("deepseek", description="LLM Provider"),
     model: str | None = Query(None, description="模型名称"),
+    dims: str | None = Query(None, description="评审维度 (逗号分隔: bug,security,performance,style)"),
 ):
-    return EventSourceResponse(event_stream(url, provider, model))
+    return EventSourceResponse(event_stream(url, provider, model, dims))
 
 
 @app.get("/api/history")
