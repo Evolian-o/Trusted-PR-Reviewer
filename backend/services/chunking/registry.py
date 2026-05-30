@@ -1,69 +1,44 @@
 """语言注册表：tree-sitter parser + AST 节点类型 + 正则兜底模式"""
 
+import logging
 from tree_sitter import Language, Parser
+
+logger = logging.getLogger(__name__)
 
 # ── tree-sitter parser 缓存 ────────────────────────────────
 
 _parsers: dict[str, Parser] = {}
 
-try:
-    import tree_sitter_python
-    _py_lang = Language(tree_sitter_python.language())
-    _parsers["python"] = Parser(_py_lang)
-except Exception:
-    pass
+_PARSER_IMPORTS = [
+    ("python", "tree_sitter_python", "language"),
+    ("javascript", "tree_sitter_javascript", "language"),
+    ("typescript", "tree_sitter_typescript", "language_typescript"),
+    ("go", "tree_sitter_go", "language"),
+    ("rust", "tree_sitter_rust", "language"),
+    ("java", "tree_sitter_java", "language"),
+    ("c_sharp", "tree_sitter_c_sharp", "language"),
+    ("ruby", "tree_sitter_ruby", "language"),
+]
 
-try:
-    import tree_sitter_javascript
-    _js_lang = Language(tree_sitter_javascript.language())
-    _parsers["javascript"] = Parser(_js_lang)
-except Exception:
-    pass
+for _lang, _mod, _attr in _PARSER_IMPORTS:
+    try:
+        _m = __import__(_mod)
+        _lang_fn = getattr(_m, _attr)
+        _parsers[_lang] = Parser(Language(_lang_fn()))
+    except Exception:
+        logger.warning("tree-sitter parser 加载失败: %s（%s 未安装）", _lang, _mod)
 
-try:
-    import tree_sitter_typescript
-    _ts_lang = Language(tree_sitter_typescript.language_typescript())
-    _parsers["typescript"] = Parser(_ts_lang)
-    _tsx_lang = Language(tree_sitter_typescript.language_tsx())
-    _parsers["tsx"] = Parser(_tsx_lang)
-except Exception:
-    pass
+# typescript 特殊：额外注册 tsx parser
+if "typescript" in _parsers:
+    try:
+        import tree_sitter_typescript as _ts
+        _parsers["tsx"] = Parser(Language(_ts.language_tsx()))
+    except Exception:
+        logger.warning("tree-sitter tsx parser 加载失败")
 
-try:
-    import tree_sitter_go
-    _go_lang = Language(tree_sitter_go.language())
-    _parsers["go"] = Parser(_go_lang)
-except Exception:
-    pass
-
-try:
-    import tree_sitter_rust
-    _rs_lang = Language(tree_sitter_rust.language())
-    _parsers["rust"] = Parser(_rs_lang)
-except Exception:
-    pass
-
-try:
-    import tree_sitter_java
-    _java_lang = Language(tree_sitter_java.language())
-    _parsers["java"] = Parser(_java_lang)
-except Exception:
-    pass
-
-try:
-    import tree_sitter_c_sharp
-    _cs_lang = Language(tree_sitter_c_sharp.language())
-    _parsers["c_sharp"] = Parser(_cs_lang)
-    _parsers["c#"] = Parser(_cs_lang)
-except Exception:
-    pass
-
-try:
-    import tree_sitter_ruby
-    _rb_lang = Language(tree_sitter_ruby.language())
-    _parsers["ruby"] = Parser(_rb_lang)
-except Exception:
-    pass
+# c_sharp 别名
+if "c_sharp" in _parsers:
+    _parsers["c#"] = _parsers["c_sharp"]
 
 # ── AST 节点类型 ── 每种语言需要提取的函数/类节点 ──────────
 

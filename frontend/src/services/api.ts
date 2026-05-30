@@ -113,7 +113,6 @@ export function streamReview(
   if (compareModel) params.set('compare_model', compareModel)
 
   const url = `/api/review?${params.toString()}`
-  console.log('[SSE] 连接:', url)
   const es = new EventSource(url, { withCredentials: true })
   let closed = false
 
@@ -125,14 +124,12 @@ export function streamReview(
   }
 
   es.addEventListener('status', (e: MessageEvent) => {
-    console.log('[SSE] status:', e.data)
     onStatus(e.data)
   })
 
   es.addEventListener('progress', (e: MessageEvent) => {
     try {
       const p = JSON.parse(e.data) as ReviewProgress
-      console.log('[SSE] progress:', p)
       onProgress(p)
     } catch (err) {
       console.warn('[SSE] progress 解析失败:', e.data, err)
@@ -158,7 +155,6 @@ export function streamReview(
   })
 
   es.addEventListener('file_done', (e: MessageEvent) => {
-    console.log('[SSE] file_done:', (e.data || '').slice(0, 80))
     try {
       const data = JSON.parse(e.data)
       if (data.file_review && onFileDone) {
@@ -170,7 +166,6 @@ export function streamReview(
   })
 
   es.addEventListener('compare_done', (e: MessageEvent) => {
-    console.log('[SSE] compare_done:', (e.data || '').slice(0, 100))
     try {
       const result = JSON.parse(e.data) as ReviewResult
       onCompareDone?.(result)
@@ -180,7 +175,6 @@ export function streamReview(
   })
 
   es.addEventListener('done', (e: MessageEvent) => {
-    console.log('[SSE] done:', e.data)
     try {
       const result = JSON.parse(e.data) as ReviewResult
       onDone(result)
@@ -207,7 +201,6 @@ export function streamReview(
   })
 
   return () => {
-    console.log('[SSE] 关闭连接')
     close()
   }
 }

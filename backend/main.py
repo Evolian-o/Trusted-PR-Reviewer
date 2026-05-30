@@ -58,6 +58,69 @@ from contextlib import asynccontextmanager
 import httpx
 
 
+# ── Pydantic 请求模型 ──────────────────────────────────────
+
+
+class MergeBody(BaseModel):
+    merge_method: str = "merge"
+
+
+class MonitorBody(BaseModel):
+    owner: str
+    repo: str
+
+
+class CreatePRBody(BaseModel):
+    title: str
+    head: str
+    base: str = "main"
+
+
+class CustomProviderBody(BaseModel):
+    name: str
+    display_name: str
+    base_url: str
+    api_key: str
+    default_model: str = ""
+    timeout: int = 120
+
+
+class CustomProviderUpdateBody(BaseModel):
+    display_name: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    default_model: str | None = None
+    timeout: int | None = None
+    is_enabled: bool | None = None
+
+
+class ProviderTestBody(BaseModel):
+    base_url: str | None = None
+    api_key: str | None = None
+    default_model: str | None = None
+
+
+class SettingsBody(BaseModel):
+    poll_interval_seconds: int | None = None
+    default_provider: str | None = None
+    default_model: str | None = None
+    chunk_max_chars: int | None = None
+    chunk_merge_max_chars: int | None = None
+    chunk_max_lines: int | None = None
+    chunk_strategy: str | None = None
+    email: dict | None = None
+
+
+class EmailTestBody(BaseModel):
+    to_email: str
+    password: str
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+
+
+# ── 生命周期 ────────────────────────────────────────────────
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger = logging.getLogger("main")
@@ -71,8 +134,8 @@ async def lifespan(app: FastAPI):
     try:
         from services.scheduler import stop_all_schedulers
         await stop_all_schedulers()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"调度器操作失败: {e}")
 
 
 app = FastAPI(title="Trusted PR Reviewer", lifespan=lifespan)
@@ -200,9 +263,8 @@ async def monitor_list(auth: AuthInfo = Depends(require_auth)):
 
 
 @app.post("/api/monitor")
-async def monitor_add(data: dict, auth: AuthInfo = Depends(require_auth)):
-    owner = data.get("owner", "")
-    repo = data.get("repo", "")
+async def monitor_add(body: MonitorBody, auth: AuthInfo = Depends(require_auth)):
+    owner, repo = body.owner, body.repo
     if not owner or not repo:
         return JSONResponse(content={"error": "缺少 owner 或 repo"}, status_code=400)
     if not await check_repo_exists(owner, repo, token=auth.github_token):
@@ -274,16 +336,13 @@ async def repo_pulls(owner: str, repo: str, state: str = "open", auth: AuthInfo 
 
 
 @app.post("/api/repos/{owner}/{repo}/pulls")
-async def repo_create_pr(owner: str, repo: str, data: dict, auth: AuthInfo = Depends(require_auth)):
-    title = data.get("title", "")
-    head = data.get("head", "")
-    base = data.get("base", "main")
-    if not title or not head:
+async def repo_create_pr(owner: str, repo: str, body: CreatePRBody, auth: AuthInfo = Depends(require_auth)):
+    if not body.title or not body.head:
         return JSONResponse(content={"error": "缺少 title 或 head"}, status_code=400)
     async with httpx.AsyncClient(verify=False) as client:
         resp = await client.post(
             f"https://api.github.com/repos/{owner}/{repo}/pulls",
-            json={"title": title, "head": head, "base": base},
+            json={"title": body.title, "head": body.head, "base": body.base},
             headers={
                 "Authorization": f"Bearer {auth.github_token}",
                 "Accept": "application/vnd.github+json",
@@ -293,10 +352,6 @@ async def repo_create_pr(owner: str, repo: str, data: dict, auth: AuthInfo = Dep
         if resp.status_code >= 400:
             return JSONResponse(content={"error": pr.get("message", "创建 PR 失败")}, status_code=resp.status_code)
         return {"number": pr["number"], "html_url": pr["html_url"], "title": pr["title"]}
-
-
-class MergeBody(BaseModel):
-    merge_method: str = "merge"
 
 
 @app.post("/api/repos/{owner}/{repo}/pulls/{pull_number}/merge")
@@ -345,18 +400,18 @@ async def provider_models(name: str, auth: AuthInfo | None = Depends(optional_au
 
 
 @app.post("/api/providers/custom")
-async def provider_create(data: dict, auth: AuthInfo = Depends(require_auth)):
+async def provider_create(body: CustomProviderBody, auth: AuthInfo = Depends(require_auth)):
     """添加自定义 OpenAI 兼容提供商"""
-    name = (data.get("name") or "").strip().lower()
+    name = body.name.strip().lower()
     if not name:
         return JSONResponse(content={"error": "name 不能为空"}, status_code=400)
     if is_builtin(name):
         return JSONResponse(content={"error": f"'{name}' 是内置提供商，不能覆盖"}, status_code=409)
 
-    display_name = (data.get("display_name") or "").strip()
-    base_url = (data.get("base_url") or "").strip()
-    api_key = (data.get("api_key") or "").strip()
-    default_model = (data.get("default_model") or "").strip()
+    display_name = body.display_name.strip()
+    base_url = body.base_url.strip()
+    api_key = body.api_key.strip()
+    default_model = body.default_model.strip()
 
     if not display_name or not base_url or not api_key:
         return JSONResponse(content={"error": "display_name / base_url / api_key 为必填"}, status_code=400)
@@ -372,7 +427,7 @@ async def provider_create(data: dict, auth: AuthInfo = Depends(require_auth)):
         "base_url": base_url,
         "api_key_enc": api_key_enc,
         "default_model": default_model,
-        "timeout": data.get("timeout", 120),
+        "timeout": body.timeout,
     }
     await db_create_custom_provider(auth.user_id, row_data)
 
@@ -380,7 +435,7 @@ async def provider_create(data: dict, auth: AuthInfo = Depends(require_auth)):
     provider = OpenAICompatibleProvider(
         name=name, base_url=base_url, api_key=api_key,
         default_model=default_model,
-        timeout=data.get("timeout", 120),
+        timeout=body.timeout,
         is_builtin=False,
     )
     register_custom_provider(auth.user_id, name, provider)
@@ -388,7 +443,7 @@ async def provider_create(data: dict, auth: AuthInfo = Depends(require_auth)):
 
 
 @app.put("/api/providers/custom/{name}")
-async def provider_update(name: str, data: dict, auth: AuthInfo = Depends(require_auth)):
+async def provider_update(name: str, body: CustomProviderUpdateBody, auth: AuthInfo = Depends(require_auth)):
     """更新自定义提供商配置"""
     if is_builtin(name):
         return JSONResponse(content={"error": f"'{name}' 是内置提供商，不可修改"}, status_code=403)
@@ -397,13 +452,11 @@ async def provider_update(name: str, data: dict, auth: AuthInfo = Depends(requir
     if not existing:
         return JSONResponse(content={"error": f"'{name}' 不存在"}, status_code=404)
 
-    updates = {}
-    for field in ("display_name", "base_url", "default_model", "timeout", "is_enabled"):
-        if field in data:
-            updates[field] = data[field]
-    if "api_key" in data and data["api_key"]:
-        updates["api_key_enc"] = encrypt(data["api_key"])
+    data = body.model_dump(exclude_none=True)
+    if "api_key" in data:
+        data["api_key_enc"] = encrypt(data.pop("api_key"))
 
+    updates = {k: v for k, v in data.items() if k in ("display_name", "base_url", "default_model", "timeout", "is_enabled", "api_key_enc")}
     if updates:
         await db_update_custom_provider(auth.user_id, name, updates)
 
@@ -438,7 +491,7 @@ async def provider_delete(name: str, auth: AuthInfo = Depends(require_auth)):
 
 
 @app.post("/api/providers/custom/{name}/test")
-async def provider_test(name: str, data: dict | None = None, auth: AuthInfo = Depends(require_auth)):
+async def provider_test(name: str, body: ProviderTestBody | None = None, auth: AuthInfo = Depends(require_auth)):
     """测试指定提供商的连接"""
     from services.llm_providers.openai_compatible import OpenAICompatibleProvider
 
@@ -448,9 +501,9 @@ async def provider_test(name: str, data: dict | None = None, auth: AuthInfo = De
         except ValueError:
             return {"ok": False, "error": f"'{name}' 未配置 API Key"}
     else:
-        if data:
-            api_key = data.get("api_key", "")
-            base_url = data.get("base_url", "")
+        if body and (body.api_key or body.base_url):
+            api_key = body.api_key or ""
+            base_url = body.base_url or ""
         else:
             row = await db_get_custom_provider(auth.user_id, name)
             if not row:
@@ -602,7 +655,8 @@ async def settings_get(auth: AuthInfo = Depends(require_auth)):
 
 
 @app.put("/api/settings")
-async def settings_update(data: dict, auth: AuthInfo = Depends(require_auth)):
+async def settings_update(body: SettingsBody, auth: AuthInfo = Depends(require_auth)):
+    data = body.model_dump(exclude_none=True)
     for key in (
         "poll_interval_seconds", "default_provider", "default_model",
         "chunk_max_chars", "chunk_merge_max_chars", "chunk_max_lines", "chunk_strategy",
@@ -610,24 +664,23 @@ async def settings_update(data: dict, auth: AuthInfo = Depends(require_auth)):
         if key in data:
             await set_setting(auth.user_id, key, str(data[key]))
 
-    email = data.get("email")
-    if email:
-        await save_email_config(auth.user_id, email)
+    if data.get("email"):
+        await save_email_config(auth.user_id, data["email"])
 
     try:
         interval = int(data.get("poll_interval_seconds", 300))
         await start_scheduler(auth.user_id, interval)
-    except Exception:
-        pass
+    except Exception as e:
+        logging.getLogger("main").warning(f"调度器操作失败: {e}")
 
     return {"status": "ok"}
 
 
 @app.post("/api/settings/email/test")
-async def email_test(data: dict, auth: AuthInfo = Depends(require_auth)):
+async def email_test(body: EmailTestBody, auth: AuthInfo = Depends(require_auth)):
     from services.email_notifier import send_test_email
     try:
-        await send_test_email(data)
+        await send_test_email(body.model_dump())
         return {"status": "ok"}
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
