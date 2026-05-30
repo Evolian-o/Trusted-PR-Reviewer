@@ -38,7 +38,7 @@ async def init_db():
                 repo        TEXT NOT NULL,
                 active      INTEGER DEFAULT 1,
                 last_pr_sha TEXT,
-                created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at  TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
             )
         """)
         await db.execute(
@@ -86,7 +86,7 @@ async def init_db():
                 timeout         INTEGER DEFAULT 120,
                 is_enabled      INTEGER DEFAULT 1,
                 created_at      TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
-                updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at      TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
                 UNIQUE(user_id, name)
             )
         """)
@@ -367,7 +367,7 @@ async def update_custom_provider(user_id: int, name: str, data: dict) -> bool:
                 params.append(data[field])
         if not sets:
             return False
-        sets.append("updated_at=datetime('now')")
+        sets.append("updated_at=datetime('now', 'localtime')")
         params.extend([user_id, name])
         await db.execute(
             f"UPDATE custom_providers SET {', '.join(sets)} WHERE user_id=? AND name=?",
