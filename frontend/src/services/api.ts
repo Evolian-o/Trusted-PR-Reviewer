@@ -1,3 +1,4 @@
+import i18next from '../i18n'
 import type { ReviewProgress, ReviewResult, FileReview, FileInfo, ProviderInfo, CustomProviderInput, TrendEntry } from '../types/review'
 
 export async function checkAuthStatus(): Promise<{
@@ -17,7 +18,7 @@ export async function apiFetch(url: string, options?: RequestInit): Promise<Resp
   })
   if (resp.status === 401) {
     window.location.href = '/?expired=1'
-    throw new Error('登录已过期')
+    throw new Error(i18next.t('api.login_expired'))
   }
   return resp
 }
@@ -42,8 +43,8 @@ export async function createCustomProvider(input: CustomProviderInput): Promise<
     credentials: 'include',
   })
   if (!resp.ok) {
-    const err = await resp.json().catch(() => ({ error: '创建失败' }))
-    throw new Error(err.error || err.detail || '创建失败')
+    const err = await resp.json().catch(() => ({ error: i18next.t('api.create_failed') }))
+    throw new Error(err.error || err.detail || i18next.t('api.create_failed'))
   }
 }
 
@@ -54,16 +55,16 @@ export async function updateCustomProvider(name: string, input: Partial<CustomPr
     body: JSON.stringify(input),
   })
   if (!resp.ok) {
-    const err = await resp.json().catch(() => ({ error: '更新失败' }))
-    throw new Error(err.error || err.detail || '更新失败')
+    const err = await resp.json().catch(() => ({ error: i18next.t('api.update_failed') }))
+    throw new Error(err.error || err.detail || i18next.t('api.update_failed'))
   }
 }
 
 export async function deleteCustomProvider(name: string): Promise<void> {
   const resp = await fetch(`/api/providers/custom/${name}`, { method: 'DELETE', credentials: 'include' })
   if (!resp.ok) {
-    const err = await resp.json().catch(() => ({ error: '删除失败' }))
-    throw new Error(err.error || err.detail || '删除失败')
+    const err = await resp.json().catch(() => ({ error: i18next.t('api.delete_failed') }))
+    throw new Error(err.error || err.detail || i18next.t('api.delete_failed'))
   }
 }
 
@@ -180,7 +181,7 @@ export function streamReview(
       onDone(result)
     } catch (err) {
       console.error('[SSE] done 解析失败:', e.data, err)
-      onError(`结果解析失败: ${err}`)
+      onError(i18next.t('api.parse_failed', { error: String(err) }))
     }
     close()
   })
@@ -195,7 +196,7 @@ export function streamReview(
     if (closed) return
     console.error('[SSE] 连接错误, readyState:', es.readyState)
     if (es.readyState === EventSource.CLOSED) {
-      onError('连接中断，请重试')
+      onError(i18next.t('api.connection_broken'))
       close()
     }
   })
@@ -207,7 +208,7 @@ export function streamReview(
 
 export async function fetchSharedReview(token: string): Promise<ReviewResult> {
   const resp = await fetch(`/api/share/${token}`, { credentials: 'include' })
-  if (!resp.ok) throw new Error('分享链接无效或已过期')
+  if (!resp.ok) throw new Error(i18next.t('api.share_invalid'))
   const data = await resp.json()
   if (data.error) throw new Error(data.error)
   return data as ReviewResult

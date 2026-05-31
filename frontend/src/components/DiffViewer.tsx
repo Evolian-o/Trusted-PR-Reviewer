@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { Issue } from '../types/review'
 
 interface DiffLine {
@@ -20,12 +21,6 @@ const SEVERITY_BG: Record<string, string> = {
   high: 'border-l-orange-500 bg-orange-900/20',
   medium: 'border-l-yellow-500 bg-yellow-900/20',
   low: 'border-l-gray-500 bg-gray-800/50',
-}
-
-const PRIORITY_LABEL: Record<string, string> = {
-  must_fix: '必须修复',
-  should_fix: '应当修复',
-  nice_to_fix: '可选',
 }
 
 const PRIORITY_COLOR: Record<string, string> = {
@@ -60,7 +55,14 @@ function parseDiff(patch: string): DiffLine[] {
 }
 
 function InlineIssue({ issue }: { issue: Issue }) {
+  const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
+
+  const PRIORITY_LABEL: Record<string, string> = {
+    must_fix: t('review.diff.priority_must'),
+    should_fix: t('review.diff.priority_should'),
+    nice_to_fix: t('review.diff.priority_nice'),
+  }
 
   return (
     <div
@@ -80,7 +82,7 @@ function InlineIssue({ issue }: { issue: Issue }) {
         </span>
         {issue.confidence > 0 && (
           <span className={`text-[10px] ${issue.confidence >= 80 ? 'text-green-400' : issue.confidence >= 50 ? 'text-yellow-400' : 'text-red-400'}`}>
-            置信度 {issue.confidence}%
+            {t('review.diff.confidence', { percent: issue.confidence })}
           </span>
         )}
         {(issue.current_code || issue.proposed_code) && (
@@ -88,14 +90,14 @@ function InlineIssue({ issue }: { issue: Issue }) {
             onClick={() => setExpanded(!expanded)}
             className="text-[10px] text-blue-400 hover:text-blue-300 ml-auto"
           >
-            {expanded ? '收起' : '查看代码'}
+            {expanded ? t('review.diff.collapse') : t('review.diff.view_code')}
           </button>
         )}
       </div>
       <p className="text-gray-300 mt-1 leading-relaxed">{issue.description}</p>
       {issue.suggestion && (
         <p className="text-gray-400 mt-0.5 text-[11px]">
-          <span className="text-green-400">建议: </span>
+          <span className="text-green-400">{t('review.diff.suggestion')}</span>
           {issue.suggestion}
         </p>
       )}
@@ -103,7 +105,7 @@ function InlineIssue({ issue }: { issue: Issue }) {
         <div className="mt-2 space-y-1.5">
           {issue.current_code && (
             <div>
-              <span className="text-[10px] text-red-400 font-medium">当前代码</span>
+              <span className="text-[10px] text-red-400 font-medium">{t('review.diff.current_code')}</span>
               <pre className="bg-gray-900/70 text-red-300 text-[11px] p-2 rounded mt-0.5 overflow-x-auto whitespace-pre-wrap font-mono">
                 {issue.current_code}
               </pre>
@@ -111,7 +113,7 @@ function InlineIssue({ issue }: { issue: Issue }) {
           )}
           {issue.proposed_code && (
             <div>
-              <span className="text-[10px] text-green-400 font-medium">建议修改</span>
+              <span className="text-[10px] text-green-400 font-medium">{t('review.diff.proposed_code')}</span>
               <pre className="bg-gray-900/70 text-green-300 text-[11px] p-2 rounded mt-0.5 overflow-x-auto whitespace-pre-wrap font-mono">
                 {issue.proposed_code}
               </pre>
@@ -124,12 +126,13 @@ function InlineIssue({ issue }: { issue: Issue }) {
 }
 
 export default function DiffViewer({ filename, language, patch, inlineIssues }: Props) {
+  const { t } = useTranslation()
   const lines = useMemo(() => parseDiff(patch), [patch])
 
   if (!patch) {
     return (
       <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 mb-3">
-        <div className="text-sm text-gray-400">（无 diff 数据）</div>
+        <div className="text-sm text-gray-400">{t('review.diff.no_diff')}</div>
       </div>
     )
   }

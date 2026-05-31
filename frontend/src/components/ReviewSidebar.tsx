@@ -1,11 +1,5 @@
+import { useTranslation } from 'react-i18next'
 import type { FileReview } from '../types/review'
-
-const NAV_ITEMS = [
-  { id: 'overview', label: '概览' },
-  { id: 'code-review', label: '代码审查' },
-  { id: 'issues-summary', label: '问题汇总' },
-  { id: 'export', label: '导出' },
-]
 
 interface Props {
   filesForNav: FileReview[]
@@ -16,6 +10,15 @@ interface Props {
 }
 
 export default function ReviewSidebar({ filesForNav, activeNav, sidebarOpen, onClose, onScrollToFile }: Props) {
+  const { t } = useTranslation()
+
+  const NAV_ITEMS = [
+    { id: 'overview', label: t('review.sidebar.overview') },
+    { id: 'code-review', label: t('review.sidebar.code_review') },
+    { id: 'issues-summary', label: t('review.sidebar.issues') },
+    { id: 'export', label: t('review.sidebar.export') },
+  ]
+
   const scrollTo = (id: string) => {
     const el = document.getElementById(id)
     el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -29,7 +32,7 @@ export default function ReviewSidebar({ filesForNav, activeNav, sidebarOpen, onC
         <div className="p-4 border-b border-gray-700/50">
           <h2 className="text-sm font-bold text-gray-200 flex items-center gap-2">
             <span className="w-2 h-2 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full" />
-            审查导航
+            {t('review.sidebar.title')}
           </h2>
         </div>
 
@@ -89,7 +92,7 @@ export default function ReviewSidebar({ filesForNav, activeNav, sidebarOpen, onC
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
             className="w-full text-left px-3 py-1.5 rounded text-xs text-gray-500 hover:text-gray-300 hover:bg-gray-800/50 transition-colors"
           >
-            ↑ 回到顶部
+            {t('review.sidebar.back_to_top')}
           </button>
         </div>
       </aside>

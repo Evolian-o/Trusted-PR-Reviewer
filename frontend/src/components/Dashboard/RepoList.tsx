@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 interface Repo {
   id: number
   owner: string
@@ -17,6 +19,8 @@ interface Props {
 }
 
 export default function RepoList({ repos, loading, search, onSearchChange, monitoredSet, onToggleMonitor }: Props) {
+  const { t } = useTranslation()
+
   const filtered = repos.filter((r) =>
     r.full_name.toLowerCase().includes(search.toLowerCase())
   )
@@ -27,13 +31,13 @@ export default function RepoList({ repos, loading, search, onSearchChange, monit
         type="text"
         value={search}
         onChange={(e) => onSearchChange(e.target.value)}
-        placeholder="搜索仓库..."
+        placeholder={t('dashboard.search_placeholder')}
         className="w-full px-3 py-2 mb-3 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
       />
       {loading ? (
         <div className="text-center text-gray-400 py-8">
           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500 mx-auto mb-2" />
-          加载仓库...
+          {t('dashboard.loading_repos')}
         </div>
       ) : (
         <div className="space-y-1 max-h-[calc(100vh-260px)] overflow-y-auto">
@@ -61,7 +65,7 @@ export default function RepoList({ repos, loading, search, onSearchChange, monit
                     : 'bg-green-900/40 text-green-400 hover:bg-green-900/60'
                 }`}
               >
-                {monitoredSet.has(`${r.owner}/${r.repo}`) ? '取消监控' : '添加监控'}
+                {monitoredSet.has(`${r.owner}/${r.repo}`) ? t('dashboard.cancel_monitor') : t('dashboard.add_monitor')}
               </button>
             </div>
           ))}

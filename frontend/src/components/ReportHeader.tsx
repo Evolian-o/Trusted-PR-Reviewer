@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { ModelInfo } from '../types/review'
 
 type MergeState = 'idle' | 'merging' | 'merged' | 'failed'
@@ -45,13 +46,15 @@ export default function ReportHeader({ owner, repo, pr, modelInfo, fromCache, pr
       })
   }, [owner, repo, pr])
 
+  const { t } = useTranslation()
+
   const handleMerge = async () => {
     if (mergeState === 'failed') {
       setMergeState('idle')
       setMergeResult(null)
       return
     }
-    if (!window.confirm(`确定要合并 ${owner}/${repo}#${pr} 吗？`)) return
+    if (!window.confirm(t('review.header.confirm_merge', { owner, repo, pr }))) return
     setMergeState('merging')
     setMergeResult(null)
     try {
@@ -63,15 +66,15 @@ export default function ReportHeader({ owner, repo, pr, modelInfo, fromCache, pr
       })
       const data = await resp.json()
       if (resp.ok) {
-        setMergeResult({ ok: true, message: data.message || '合并成功' })
+        setMergeResult({ ok: true, message: data.message || t('review.header.merge_success') })
         setMergeState('merged')
         localStorage.setItem(LS_KEY(owner, repo, pr), 'merged')
       } else {
-        setMergeResult({ ok: false, message: data.error || '合并失败' })
+        setMergeResult({ ok: false, message: data.error || t('review.header.merge_failed') })
         setMergeState('failed')
       }
     } catch {
-      setMergeResult({ ok: false, message: '网络错误，请重试' })
+      setMergeResult({ ok: false, message: t('common.network_error') })
       setMergeState('failed')
     }
   }
@@ -85,13 +88,13 @@ export default function ReportHeader({ owner, repo, pr, modelInfo, fromCache, pr
           </h1>
           {modelInfo && (
             <p className="text-sm text-gray-500 mt-1">
-              评审模型: <span className="text-blue-400">{modelInfo.provider} / {modelInfo.model}</span>
+              {t('review.header.review_model')} <span className="text-blue-400">{modelInfo.provider} / {modelInfo.model}</span>
             </p>
           )}
           {fromCache && (
             <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
               <span className="inline-block w-1.5 h-1.5 bg-gray-500 rounded-full" />
-              来自缓存 · 无需消耗 Token
+              {t('review.header.from_cache')}
             </p>
           )}
         </div>
@@ -106,7 +109,7 @@ export default function ReportHeader({ owner, repo, pr, modelInfo, fromCache, pr
               }}
               className="text-sm text-yellow-400 hover:text-yellow-300 px-3 py-1 border border-yellow-600 rounded transition-colors"
             >
-              重新评审
+              {t('review.header.re_review')}
             </button>
           )}
           <a
@@ -115,7 +118,7 @@ export default function ReportHeader({ owner, repo, pr, modelInfo, fromCache, pr
             rel="noopener noreferrer"
             className="text-sm text-blue-400 hover:text-blue-300"
           >
-            在 GitHub 查看 &rarr;
+            {t('review.header.view_on_github')} &rarr;
           </a>
           <button
             onClick={handleMerge}
@@ -128,10 +131,10 @@ export default function ReportHeader({ owner, repo, pr, modelInfo, fromCache, pr
                   : 'bg-green-700 hover:bg-green-600 text-white'
             }`}
           >
-            {mergeState === 'merging' ? '合并中...' :
-             mergeState === 'merged' ? '已合并' :
-             mergeState === 'failed' ? '合并失败 · 重试' :
-             '合并 PR'}
+            {mergeState === 'merging' ? t('review.header.merging') :
+             mergeState === 'merged' ? t('review.header.merged') :
+             mergeState === 'failed' ? t('review.header.merge_failed_retry') :
+             t('review.header.merge_pr')}
           </button>
         </div>
       </div>

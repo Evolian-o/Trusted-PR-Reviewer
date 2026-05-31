@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
+import i18next from 'i18next'
+import { useTranslation } from 'react-i18next'
 import type { RewrittenFile, FileReview } from '../types/review'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -39,7 +41,7 @@ function buildDefaultReview(rf: RewrittenFile, fileReviews: FileReview[]): strin
   const parts: string[] = []
   for (const issue of fr.issues) {
     if (issue.suggestion) {
-      parts.push(`[${issue.severity}] L${issue.line ?? '?'}: ${issue.description}\n  建议: ${issue.suggestion}`)
+      parts.push(`[${issue.severity}] L${issue.line ?? '?'}: ${issue.description}\n  ${i18next.t('review.diff.suggestion')} ${issue.suggestion}`)
     }
   }
   if (fr.suggestions.length > 0) {
@@ -49,6 +51,7 @@ function buildDefaultReview(rf: RewrittenFile, fileReviews: FileReview[]): strin
 }
 
 export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owner, repo, pullNumber, provider, model, editedCode, onEditedCodeChange, changedRanges, onChangedRangesChange, aiSuggestion, onAiSuggestionChange }: Props) {
+  const { t } = useTranslation()
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set(rewrittenFiles.map(f => f.filename)))
   const [copiedFile, setCopiedFile] = useState<string | null>(null)
   const [fixing, setFixing] = useState(false)
@@ -166,10 +169,10 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
           onAiSuggestionChange(prev => ({ ...prev, [rf.filename]: data.suggestion }))
         }
       } else {
-        setErrors(prev => ({ ...prev, [rf.filename]: data.error || '优化失败' }))
+        setErrors(prev => ({ ...prev, [rf.filename]: data.error || i18next.t('review.rewritten.optimize_failed') }))
       }
     } catch {
-      setErrors(prev => ({ ...prev, [rf.filename]: '网络错误，请重试' }))
+      setErrors(prev => ({ ...prev, [rf.filename]: i18next.t('common.network_error') }))
     } finally {
       setOptimizing(prev => {
         const next = new Set(prev)
@@ -201,10 +204,10 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
       if (resp.ok && data.polished_text) {
         setReviewComment(prev => ({ ...prev, [rf.filename]: data.polished_text }))
       } else {
-        setErrors(prev => ({ ...prev, [rf.filename]: data.error || '润色失败' }))
+        setErrors(prev => ({ ...prev, [rf.filename]: data.error || i18next.t('review.rewritten.polish_failed') }))
       }
     } catch {
-      setErrors(prev => ({ ...prev, [rf.filename]: '网络错误，请重试' }))
+      setErrors(prev => ({ ...prev, [rf.filename]: i18next.t('common.network_error') }))
     } finally {
       setPolishing(prev => {
         const next = new Set(prev)
@@ -216,7 +219,7 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
 
   // --- 提交修复到 PR ---
   const handleFixPR = async () => {
-    if (!window.confirm(`确定要将 ${rewrittenFiles.length} 个文件的修复代码提交到 PR #${pullNumber} 吗？\n\n这会在 PR 分支上创建新的 commit。`)) return
+    if (!window.confirm(i18next.t('review.rewritten.confirm_fix', { count: rewrittenFiles.length, number: pullNumber }))) return
     setFixing(true)
     setFixResult(null)
     try {
@@ -235,10 +238,10 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
       if (resp.ok && data.ok) {
         setFixResult({ ok: true, message: data.message, commit_url: data.commit_url })
       } else {
-        setFixResult({ ok: false, message: data.error || data.message || '提交失败' })
+        setFixResult({ ok: false, message: data.error || data.message || i18next.t('review.rewritten.submit_failed') })
       }
     } catch {
-      setFixResult({ ok: false, message: '网络错误，请重试' })
+      setFixResult({ ok: false, message: i18next.t('common.network_error') })
     } finally {
       setFixing(false)
     }
@@ -256,10 +259,10 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
       }
     }
     if (!hasContent) {
-      setSubmitResult({ ok: false, message: '请先在评审意见区撰写内容' })
+      setSubmitResult({ ok: false, message: i18next.t('review.rewritten.review_empty') })
       return
     }
-    const reviewText = `## AI 代码评审报告\n\n以下是对 ${rewrittenFiles.length} 个重写文件的评审意见：\n\n${parts.join('\n\n---\n\n')}`
+    const reviewText = `## ${i18next.t('review.rewritten.report_title')}\n\n${i18next.t('review.rewritten.body_intro', { count: rewrittenFiles.length })}\n\n${parts.join('\n\n---\n\n')}`
 
     setSubmittingReview(true)
     setSubmitResult(null)
@@ -274,10 +277,10 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
       if (resp.ok && data.ok) {
         setSubmitResult({ ok: true, message: data.message, html_url: data.html_url })
       } else {
-        setSubmitResult({ ok: false, message: data.error || data.message || '提交失败' })
+        setSubmitResult({ ok: false, message: data.error || data.message || i18next.t('review.rewritten.submit_failed') })
       }
     } catch {
-      setSubmitResult({ ok: false, message: '网络错误，请重试' })
+      setSubmitResult({ ok: false, message: i18next.t('common.network_error') })
     } finally {
       setSubmittingReview(false)
     }
@@ -288,9 +291,9 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
       {/* 顶部工具栏 */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold text-white flex items-center gap-2">
-          AI 重写代码
+          {t('review.rewritten.title')}
           <span className="text-sm font-normal text-gray-400">
-            ({rewrittenFiles.length} 个文件)
+            {t('review.rewritten.files_count', { count: rewrittenFiles.length })}
           </span>
         </h2>
         {auth.authenticated && (
@@ -300,14 +303,14 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
               disabled={submittingReview}
               className="text-sm px-3 py-1.5 bg-blue-700 hover:bg-blue-600 text-white rounded-lg transition-colors disabled:opacity-50"
             >
-              {submittingReview ? '提交中...' : '提交评审意见'}
+              {submittingReview ? t('review.rewritten.submitting') : t('review.rewritten.submit_review')}
             </button>
             <button
               onClick={handleFixPR}
               disabled={fixing}
               className="text-sm px-3 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-lg transition-colors disabled:opacity-50"
             >
-              {fixing ? '提交中...' : '提交修复到 PR'}
+              {fixing ? t('review.rewritten.submitting') : t('review.rewritten.submit_fix')}
             </button>
           </div>
         )}
@@ -320,7 +323,7 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
           {submitResult.message}
           {submitResult.html_url && (
             <a href={submitResult.html_url} target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300 underline">
-              查看 PR &rarr;
+              {t('review.rewritten.view_pr')} &rarr;
             </a>
           )}
         </div>
@@ -333,7 +336,7 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
           {fixResult.message}
           {fixResult.commit_url && (
             <a href={fixResult.commit_url} target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300 underline">
-              查看 commit &rarr;
+              {t('review.rewritten.view_commit')} &rarr;
             </a>
           )}
         </div>
@@ -359,17 +362,17 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
                 <span className="text-white font-mono text-sm truncate">{rf.filename}</span>
                 <span className="text-xs text-gray-500 shrink-0">{rf.language}</span>
                 <span className="text-xs bg-blue-900/50 text-blue-300 px-2 py-0.5 rounded shrink-0">
-                  {rf.issues_fixed} 个修复
+                  {t('review.rewritten.fixes_count', { count: rf.issues_fixed })}
                 </span>
                 {hasEdit && (
-                  <span className="text-xs bg-yellow-900/50 text-yellow-300 px-2 py-0.5 rounded shrink-0">已编辑</span>
+                  <span className="text-xs bg-yellow-900/50 text-yellow-300 px-2 py-0.5 rounded shrink-0">{t('review.rewritten.edited')}</span>
                 )}
               </div>
               <button
                 onClick={(e) => { e.stopPropagation(); handleCopy(rf.filename, code) }}
                 className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded transition-colors shrink-0 ml-2"
               >
-                {copiedFile === rf.filename ? '已复制' : '复制代码'}
+                {copiedFile === rf.filename ? t('review.rewritten.copied') : t('review.rewritten.copy_code')}
               </button>
             </div>
 
@@ -379,7 +382,7 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
                 {aiSuggestion[rf.filename] && (
                   <div className="px-4 py-2.5 bg-blue-900/20 border-b border-blue-800/30">
                     <div className="flex items-start gap-2">
-                      <span className="text-xs text-blue-400 mt-0.5 shrink-0">AI 优化说明:</span>
+                      <span className="text-xs text-blue-400 mt-0.5 shrink-0">{t('review.rewritten.ai_label')}</span>
                       <p className="text-sm text-blue-200/80 leading-relaxed">{aiSuggestion[rf.filename]}</p>
                     </div>
                   </div>
@@ -388,9 +391,9 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
                 {/* ====== 面板1: 源代码编辑器 ====== */}
                 <div className="border-b border-gray-700/50">
                   <div className="px-4 pt-3 pb-1.5 flex items-center justify-between">
-                    <label className="text-xs text-gray-400 font-medium">源代码</label>
+                    <label className="text-xs text-gray-400 font-medium">{t('review.rewritten.source_label')}</label>
                     {hasChanges && (
-                      <span className="text-xs text-red-400">改动已标红</span>
+                      <span className="text-xs text-red-400">{t('review.rewritten.changes_red')}</span>
                     )}
                   </div>
                   <div className="px-4 pb-3">
@@ -451,19 +454,19 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
                       disabled={optimizing.has(rf.filename)}
                       className="mt-2 text-xs px-3 py-1.5 bg-purple-700 hover:bg-purple-600 disabled:opacity-40 text-white rounded transition-colors"
                     >
-                      {optimizing.has(rf.filename) ? 'AI 优化中...' : 'AI 优化代码'}
+                      {optimizing.has(rf.filename) ? t('review.rewritten.ai_optimizing') : t('review.rewritten.ai_optimize')}
                     </button>
                   </div>
                 </div>
 
                 {/* ====== 面板2: 评审意见编辑器 ====== */}
                 <div className="px-4 py-3">
-                  <label className="text-xs text-gray-400 font-medium mb-1.5 block">评审意见</label>
+                  <label className="text-xs text-gray-400 font-medium mb-1.5 block">{t('review.rewritten.review_label')}</label>
                   <textarea
                     value={reviewComment[rf.filename] || ''}
                     onChange={(e) => setReviewComment(prev => ({ ...prev, [rf.filename]: e.target.value }))}
                     className="w-full p-3 text-sm text-gray-300 bg-gray-900 border border-gray-600 rounded-lg resize-y min-h-[120px] max-h-[400px] outline-none focus:border-blue-500 font-sans leading-relaxed"
-                    placeholder="在此撰写给 PR 作者的评审意见..."
+                    placeholder={t('review.rewritten.review_placeholder')}
                     spellCheck
                     rows={6}
                   />
@@ -472,7 +475,7 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
                     disabled={polishing.has(rf.filename) || !(reviewComment[rf.filename] || '').trim()}
                     className="mt-2 text-xs px-3 py-1.5 bg-blue-700 hover:bg-blue-600 disabled:opacity-40 text-white rounded transition-colors"
                   >
-                    {polishing.has(rf.filename) ? 'AI 润色中...' : 'AI 润色'}
+                    {polishing.has(rf.filename) ? t('review.rewritten.ai_polishing') : t('review.rewritten.ai_polish')}
                   </button>
                 </div>
 

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import HistoryCard from '../components/HistoryCard'
 
 interface HistoryItem {
@@ -22,6 +23,7 @@ interface HistoryItem {
 }
 
 export default function HistoryPage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [reviews, setReviews] = useState<HistoryItem[]>([])
   const [expandedId, setExpandedId] = useState<number | null>(null)
@@ -42,7 +44,7 @@ export default function HistoryPage() {
       const data = await resp.json()
       setReviews(data.reviews || [])
     } catch (err) {
-      console.error('获取历史失败:', err)
+      console.error(t('history.fetch_failed'), err)
     } finally {
       setLoading(false)
     }
@@ -58,7 +60,7 @@ export default function HistoryPage() {
       setReviews((prev) => prev.filter((r) => r.id !== id))
       if (expandedId === id) setExpandedId(null)
     } catch (err) {
-      console.error('删除失败:', err)
+      console.error(t('history.delete_failed'), err)
     }
   }
 
@@ -67,14 +69,14 @@ export default function HistoryPage() {
       <div className="max-w-4xl mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-white">评审历史</h1>
-            <p className="text-gray-400 text-sm mt-1">本地持久化的 PR 评审记录</p>
+            <h1 className="text-2xl font-bold text-white">{t('history.title')}</h1>
+            <p className="text-gray-400 text-sm mt-1">{t('history.description')}</p>
           </div>
           <button
             onClick={() => navigate('/review')}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
           >
-            新评审
+            {t('history.new_review')}
           </button>
         </div>
 
@@ -83,7 +85,7 @@ export default function HistoryPage() {
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="搜索标题 / owner / 仓库..."
+            placeholder={t('history.search_placeholder')}
             className="flex-1 min-w-60 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <input
@@ -91,7 +93,7 @@ export default function HistoryPage() {
             value={fromDate}
             onChange={(e) => setFromDate(e.target.value)}
             className="px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            title="开始日期"
+            title={t('history.start_date')}
           />
           <span className="text-gray-500 self-center">—</span>
           <input
@@ -99,18 +101,18 @@ export default function HistoryPage() {
             value={toDate}
             onChange={(e) => setToDate(e.target.value)}
             className="px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            title="结束日期"
+            title={t('history.end_date')}
           />
         </div>
 
         {loading ? (
           <div className="text-center text-gray-400 py-12">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-3" />
-            加载中...
+            {t('history.loading')}
           </div>
         ) : reviews.length === 0 ? (
           <div className="text-center text-gray-400 py-12">
-            暂无评审记录
+            {t('history.empty')}
           </div>
         ) : (
           <div className="space-y-3">

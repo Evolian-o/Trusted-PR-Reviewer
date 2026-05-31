@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { formatLocalTime } from '../../utils/time'
 
 interface ReviewItem {
@@ -24,20 +25,21 @@ const RISK_CLASS: Record<string, string> = {
   low: 'bg-green-600',
 }
 
-const RISK_TEXT: Record<string, string> = {
-  high: '高',
-  medium: '中',
-  low: '低',
-}
-
 export default function RecentReviews({ reviews }: Props) {
   const navigate = useNavigate()
+  const { t } = useTranslation()
+
+  const RISK_TEXT: Record<string, string> = {
+    high: t('dashboard.risk_high'),
+    medium: t('dashboard.risk_medium'),
+    low: t('dashboard.risk_low'),
+  }
 
   return (
     <div>
-      <h2 className="text-lg font-semibold text-white mb-4">最近评审</h2>
+      <h2 className="text-lg font-semibold text-white mb-4">{t('dashboard.recent_reviews')}</h2>
       {reviews.length === 0 ? (
-        <p className="text-gray-500 text-sm">暂无评审记录</p>
+        <p className="text-gray-500 text-sm">{t('dashboard.no_reviews')}</p>
       ) : (
         <div className="space-y-2">
           {reviews.map((r) => (
@@ -60,7 +62,7 @@ export default function RecentReviews({ reviews }: Props) {
                 <span className={`px-1.5 py-0.5 rounded text-xs text-white ${RISK_CLASS[r.risk_level] || 'bg-gray-600'}`}>
                   {RISK_TEXT[r.risk_level] || r.risk_level}
                 </span>
-                <span className="text-gray-500 text-xs">{r.issue_count} 问题</span>
+                <span className="text-gray-500 text-xs">{t('dashboard.issue_count', { count: r.issue_count })}</span>
                 <span className="text-gray-600 text-xs">{formatLocalTime(r.created_at)}</span>
               </div>
             </div>

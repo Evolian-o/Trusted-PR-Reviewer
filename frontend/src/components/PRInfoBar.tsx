@@ -1,17 +1,10 @@
+import { useTranslation } from 'react-i18next'
 import type { ReviewResult } from '../types/review'
 
 const RISK_COLORS: Record<string, string> = {
   high: 'bg-gradient-to-r from-red-600 to-red-500 shadow-lg shadow-red-600/25',
   medium: 'bg-gradient-to-r from-yellow-600 to-orange-500 shadow-lg shadow-yellow-600/25',
   low: 'bg-gradient-to-r from-green-600 to-emerald-500 shadow-lg shadow-green-600/25',
-}
-
-const DIM_LABELS: Record<string, string> = {
-  overall: '综合',
-  security: '安全',
-  bug: 'Bug',
-  performance: '性能',
-  style: '规范',
 }
 
 const DIM_ORDER = ['security', 'bug', 'performance', 'style']
@@ -66,7 +59,16 @@ function ScoreRing({ value, size = 80 }: { value: number; size?: number }) {
 }
 
 export default function PRInfoBar({ result }: { result: ReviewResult }) {
+  const { t } = useTranslation()
   const hasScores = result.scores && Object.keys(result.scores).length > 0
+
+  const DIM_LABELS: Record<string, string> = {
+    overall: t('review.info.dim_overall'),
+    security: t('review.info.dim_security'),
+    bug: t('review.info.dim_bug'),
+    performance: t('review.info.dim_performance'),
+    style: t('review.info.dim_style'),
+  }
 
   return (
     <div className="bg-gray-800 border border-gray-700 rounded-lg p-5">
@@ -77,12 +79,12 @@ export default function PRInfoBar({ result }: { result: ReviewResult }) {
             {result.owner}/{result.repo} #{result.pull_number}
           </p>
           <div className="flex items-center gap-4 text-sm mt-2 flex-wrap">
-            <span className="text-gray-300">{result.files_changed} 个文件</span>
-            <span className="text-green-400">+{result.additions} <span className="text-gray-500">行新增</span></span>
-            <span className="text-red-400">-{result.deletions} <span className="text-gray-500">行删除</span></span>
+            <span className="text-gray-300">{t('review.info.files_changed', { count: result.files_changed })}</span>
+            <span className="text-green-400">+{result.additions} <span className="text-gray-500">{t('review.info.lines_added')}</span></span>
+            <span className="text-red-400">-{result.deletions} <span className="text-gray-500">{t('review.info.lines_deleted')}</span></span>
             <span className={`px-3 py-1 rounded-full text-xs font-bold text-white ${RISK_COLORS[result.risk_level] || 'bg-gray-600'}`}>
-              {result.risk_level === 'high' ? '高风险' :
-               result.risk_level === 'medium' ? '中风险' : '低风险'}
+              {result.risk_level === 'high' ? t('review.info.risk_high') :
+               result.risk_level === 'medium' ? t('review.info.risk_medium') : t('review.info.risk_low')}
             </span>
           </div>
         </div>
@@ -92,7 +94,7 @@ export default function PRInfoBar({ result }: { result: ReviewResult }) {
           <div className="flex items-start gap-5">
             <div className="flex flex-col items-center">
               <ScoreRing value={result.scores.overall || 0} size={80} />
-              <span className="text-xs text-gray-500 mt-1">综合评分</span>
+              <span className="text-xs text-gray-500 mt-1">{t('review.overall_score')}</span>
             </div>
             <div className="space-y-1.5 min-w-[140px]">
               {DIM_ORDER.map((dim) => {

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import type { FileReview, FileInfo } from '../types/review'
 import DiffViewer from './DiffViewer'
 
@@ -21,6 +22,8 @@ const sevBg: Record<string, string> = {
 export default function FileReviewSection({
   fileReviews, allPatches, collapsedFiles, onToggle, colorScheme, noPatchMessage, findPatch,
 }: Props) {
+  const { t } = useTranslation()
+
   return (
     <div className="space-y-4">
       {fileReviews.map((fr) => {
@@ -57,11 +60,11 @@ export default function FileReviewSection({
                         ? 'bg-orange-700 text-orange-100'
                         : 'bg-yellow-700 text-yellow-100'
                   }`}>
-                    {fr.issues.length} 问题
+                    {t('issues.file.issues_count', { count: fr.issues.length })}
                   </span>
                 )}
                 {fr.issues.length === 0 && (
-                  <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-green-700 text-green-100">通过</span>
+                  <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-green-700 text-green-100">{t('issues.file.passed')}</span>
                 )}
               </div>
             </button>

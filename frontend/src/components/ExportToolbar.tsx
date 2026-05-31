@@ -1,4 +1,6 @@
 import type { ReviewResult } from '../types/review'
+import i18next from 'i18next'
+import { useTranslation } from 'react-i18next'
 
 interface Props {
   result: ReviewResult
@@ -8,17 +10,13 @@ interface Props {
   changedRanges?: Record<string, Set<number>>
 }
 
-const PRIORITY_LABEL: Record<string, string> = {
-  must_fix: '必须修复',
-  should_fix: '应当修复',
-  nice_to_fix: '可选优化',
+function getPriorityLabel(priority: string): string {
+  const key = priority.replace('_fix', '')
+  return i18next.t(`review.export.priority_${key}`, priority)
 }
 
-const SEVERITY_LABEL: Record<string, string> = {
-  critical: '严重',
-  high: '高',
-  medium: '中',
-  low: '低',
+function getSeverityLabel(severity: string): string {
+  return i18next.t(`review.export.severity_${severity}`, severity)
 }
 
 function buildExportHtml(
@@ -30,17 +28,17 @@ function buildExportHtml(
   const lines: string[] = []
 
   // ── 头部 ──
-  lines.push(`<h1>PR 评审报告: ${e(result.pr_title)}</h1>`)
+  lines.push(`<h1>${i18next.t('review.export.html_title')}: ${e(result.pr_title)}</h1>`)
   lines.push(`<div class="meta">`)
-  lines.push(`  <span>仓库: ${e(result.owner)}/${e(result.repo)} #${result.pull_number}</span>`)
-  lines.push(`  <span>文件: ${result.files_changed} | +${result.additions} -${result.deletions}</span>`)
-  lines.push(`  <span class="risk risk-${result.risk_level}">风险: ${result.risk_level.toUpperCase()}</span>`)
+  lines.push(`  <span>${i18next.t('review.export.html_repo')}: ${e(result.owner)}/${e(result.repo)} #${result.pull_number}</span>`)
+  lines.push(`  <span>${i18next.t('review.export.html_files')}: ${result.files_changed} | +${result.additions} -${result.deletions}</span>`)
+  lines.push(`  <span class="risk risk-${result.risk_level}">${i18next.t('review.export.html_risk')}: ${result.risk_level.toUpperCase()}</span>`)
   lines.push(`</div>`)
 
   // ── 评分 ──
   if (result.scores && Object.keys(result.scores).length > 0) {
-    lines.push(`<h2>评审评分</h2>`)
-    lines.push(`<table><thead><tr><th>综合</th><th>安全</th><th>Bug</th><th>性能</th><th>规范</th></tr></thead>`)
+    lines.push(`<h2>${i18next.t('review.export.html_scores_title')}</h2>`)
+    lines.push(`<table><thead><tr><th>${i18next.t('review.export.html_table_overall')}</th><th>${i18next.t('review.export.html_table_security')}</th><th>${i18next.t('review.export.html_table_bug')}</th><th>${i18next.t('review.export.html_table_performance')}</th><th>${i18next.t('review.export.html_table_style')}</th></tr></thead>`)
     lines.push(`<tbody><tr>`)
     lines.push(`<td>${result.scores.overall ?? '-'}</td>`)
     lines.push(`<td>${result.scores.security ?? '-'}</td>`)
@@ -51,13 +49,13 @@ function buildExportHtml(
   }
 
   // ── 总结 ──
-  lines.push(`<h2>评审总结</h2>`)
+  lines.push(`<h2>${i18next.t('review.export.html_summary_title')}</h2>`)
   lines.push(`<p>${e(result.summary)}</p>`)
-  lines.push(`<p>发现 <strong>${result.issues.length}</strong> 个问题，提出 <strong>${result.suggestions.length}</strong> 条建议</p>`)
+  lines.push(`<p>${i18next.t('review.export.html_summary_line', { issues: result.issues.length, suggestions: result.suggestions.length })}</p>`)
 
   // ── 代码审查详情 ──
   if (result.file_reviews.length > 0) {
-    lines.push(`<h2>代码审查详情 (${result.file_reviews.length} 个文件)</h2>`)
+    lines.push(`<h2>${i18next.t('review.export.html_details_title', { count: result.file_reviews.length })}</h2>`)
     for (const fr of result.file_reviews) {
       lines.push(`<h3>${e(fr.file)}</h3>`)
       if (fr.summary) {
@@ -67,12 +65,12 @@ function buildExportHtml(
         for (const issue of fr.issues) {
           lines.push(`<div class="issue issue-${issue.severity}">`)
           lines.push(`  <div class="issue-header">`)
-          lines.push(`    <span class="severity severity-${issue.severity}">${SEVERITY_LABEL[issue.severity] || issue.severity}</span>`)
-          lines.push(`    <span class="priority">${PRIORITY_LABEL[issue.priority] || issue.priority}</span>`)
+          lines.push(`    <span class="severity severity-${issue.severity}">${getSeverityLabel(issue.severity)}</span>`)
+          lines.push(`    <span class="priority">${getPriorityLabel(issue.priority)}</span>`)
           if (issue.line) lines.push(`    <span>L${issue.line}</span>`)
           lines.push(`  </div>`)
           lines.push(`  <p>${e(issue.description)}</p>`)
-          if (issue.suggestion) lines.push(`  <p><em>建议: ${e(issue.suggestion)}</em></p>`)
+          if (issue.suggestion) lines.push(`  <p><em>${i18next.t('review.export.html_suggestion')} ${e(issue.suggestion)}</em></p>`)
           if (issue.current_code) {
             lines.push(`  <pre class="code code-old">${e(issue.current_code)}</pre>`)
           }
@@ -92,7 +90,7 @@ function buildExportHtml(
 
   // ── AI 重写代码 ──
   if (result.rewritten_files && result.rewritten_files.length > 0) {
-    lines.push(`<h2>AI 重写代码 (${result.rewritten_files.length} 个文件)</h2>`)
+    lines.push(`<h2>${i18next.t('review.export.html_rewrite_title', { count: result.rewritten_files.length })}</h2>`)
     for (const rf of result.rewritten_files) {
       const code = editedCode?.[rf.filename] ?? rf.content
       const codeLines = code.split('\n')
@@ -122,17 +120,17 @@ function buildExportHtml(
       grouped.get(p)!.push(issue)
     }
 
-    lines.push(`<h2>问题汇总 (${result.issues.length})</h2>`)
+    lines.push(`<h2>${i18next.t('review.export.html_issues_title', { count: result.issues.length })}</h2>`)
     for (const [priority, items] of grouped) {
-      lines.push(`<h3>${PRIORITY_LABEL[priority] || priority} (${items.length})</h3>`)
+      lines.push(`<h3>${getPriorityLabel(priority)} (${items.length})</h3>`)
       for (const issue of items) {
         lines.push(`<div class="issue issue-${issue.severity}">`)
         lines.push(`  <div class="issue-header">`)
-        lines.push(`    <span class="severity severity-${issue.severity}">${SEVERITY_LABEL[issue.severity] || issue.severity}</span>`)
+        lines.push(`    <span class="severity severity-${issue.severity}">${getSeverityLabel(issue.severity)}</span>`)
         lines.push(`    <span>${e(issue.file)}${issue.line ? ':' + issue.line : ''}</span>`)
         lines.push(`  </div>`)
         lines.push(`  <p>${e(issue.description)}</p>`)
-        if (issue.suggestion) lines.push(`  <p><em>建议: ${e(issue.suggestion)}</em></p>`)
+        if (issue.suggestion) lines.push(`  <p><em>${i18next.t('review.export.html_suggestion')} ${e(issue.suggestion)}</em></p>`)
         lines.push(`</div>`)
       }
     }
@@ -140,7 +138,7 @@ function buildExportHtml(
 
   // ── 优化建议 ──
   if (result.suggestions.length > 0) {
-    lines.push(`<h2>优化建议</h2>`)
+    lines.push(`<h2>${i18next.t('review.export.html_suggestions_title')}</h2>`)
     lines.push(`<ul>`)
     for (const s of result.suggestions) lines.push(`  <li>${e(s)}</li>`)
     lines.push(`</ul>`)
@@ -152,7 +150,7 @@ function buildExportHtml(
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>PR 评审报告 — ${e(result.owner)}/${e(result.repo)} #${result.pull_number}</title>
+<title>${i18next.t('review.export.html_title')} — ${e(result.owner)}/${e(result.repo)} #${result.pull_number}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -279,47 +277,49 @@ ${body}
 }
 
 export default function ExportToolbar({ result, editedCode, changedRanges }: Props) {
+  const { t } = useTranslation()
+
   const handleCopyMarkdown = () => {
     const lines = [
-      `# PR 评审报告: ${result.pr_title}`,
+      `# ${t('review.export.html_title')}: ${result.pr_title}`,
       '',
-      `**仓库**: ${result.owner}/${result.repo} #${result.pull_number}`,
-      `**文件数**: ${result.files_changed} | **+${result.additions}** **-${result.deletions}**`,
-      `**风险等级**: ${result.risk_level.toUpperCase()}`,
+      `**${t('review.export.md_repo')}**: ${result.owner}/${result.repo} #${result.pull_number}`,
+      `**${t('review.export.md_files_count')}**: ${result.files_changed} | **+${result.additions}** **-${result.deletions}**`,
+      `**${t('review.export.md_risk_level')}**: ${result.risk_level.toUpperCase()}`,
     ]
 
     if (result.scores && Object.keys(result.scores).length > 0) {
       lines.push(
         '',
-        '## 评分',
-        `- 综合: ${result.scores.overall || '-'}`,
-        `- 安全: ${result.scores.security || '-'}`,
+        `## ${t('review.export.md_scores')}`,
+        `- ${t('review.export.html_table_overall')}: ${result.scores.overall || '-'}`,
+        `- ${t('review.export.html_table_security')}: ${result.scores.security || '-'}`,
         `- Bug: ${result.scores.bug || '-'}`,
-        `- 性能: ${result.scores.performance || '-'}`,
-        `- 规范: ${result.scores.style || '-'}`,
+        `- ${t('review.export.html_table_performance')}: ${result.scores.performance || '-'}`,
+        `- ${t('review.export.html_table_style')}: ${result.scores.style || '-'}`,
       )
     }
 
     lines.push(
       '',
-      '## 总结',
+      `## ${t('review.export.md_summary')}`,
       result.summary,
       '',
-      '## 问题列表',
+      `## ${t('review.export.md_issue_list')}`,
     )
 
     for (const issue of result.issues) {
       lines.push(
         `- **[${issue.severity.toUpperCase()}] [${issue.priority}] ${issue.category}** — ${issue.file}${issue.line ? `:${issue.line}` : ''}`,
         `  ${issue.description}`,
-        issue.suggestion ? `  > 建议: ${issue.suggestion}` : '',
+        issue.suggestion ? `  > ${t('review.export.md_suggestion')} ${issue.suggestion}` : '',
         issue.current_code ? `  \`\`\`\n  ${issue.current_code}\n  \`\`\`` : '',
         issue.proposed_code ? `  → \`\`\`\n  ${issue.proposed_code}\n  \`\`\`` : '',
       )
     }
 
     if (result.suggestions.length > 0) {
-      lines.push('', '## 优化建议')
+      lines.push('', `## ${t('review.export.md_suggestions')}`)
       result.suggestions.forEach((s) => lines.push(`- ${s}`))
     }
 
@@ -334,7 +334,7 @@ export default function ExportToolbar({ result, editedCode, changedRanges }: Pro
     const html = buildExportHtml(result, editedCode, changedRanges)
     const w = window.open('', '_blank', 'width=900,height=700')
     if (!w) {
-      window.alert('弹窗被浏览器拦截，请允许弹窗后重试。')
+      window.alert(t('review.export.popup_blocked'))
       return
     }
     w.document.write(html)
@@ -358,26 +358,26 @@ export default function ExportToolbar({ result, editedCode, changedRanges }: Pro
         onClick={handleCopyMarkdown}
         className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-500 transition-colors"
       >
-        复制 Markdown
+        {t('review.export.btn_markdown')}
       </button>
       <button
         onClick={handleCopyJSON}
         className="px-4 py-2 bg-gray-700 text-gray-300 text-sm rounded-lg hover:bg-gray-600 transition-colors"
       >
-        复制 JSON
+        {t('review.export.btn_json')}
       </button>
       <button
         onClick={handlePrintPDF}
         className="px-4 py-2 bg-green-700 text-white text-sm rounded-lg hover:bg-green-600 transition-colors"
       >
-        导出 PDF
+        {t('review.export.btn_pdf')}
       </button>
       {result.share_token && (
         <button
           onClick={handleCopyShareLink}
           className="px-4 py-2 bg-purple-700 text-white text-sm rounded-lg hover:bg-purple-600 transition-colors"
         >
-          复制分享链接
+          {t('review.export.btn_share_link')}
         </button>
       )}
     </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { streamReview, fetchCachedReview, fetchRepoStats } from '../services/api'
 import type { ReviewPhase, ReviewProgress, ReviewResult, FileInfo, FileReview, ModelInfo, TrendEntry } from '../types/review'
@@ -26,6 +27,7 @@ function findPatch(patches: Map<string, FileInfo>, chunkName: string): FileInfo 
 }
 
 export default function ReviewReportPage() {
+  const { t } = useTranslation()
   const { owner, repo, pr } = useParams()
   const [searchParams] = useSearchParams()
 
@@ -92,7 +94,7 @@ export default function ReviewReportPage() {
 
   const loadCachedReview = useCallback(async (id: number) => {
     setPhase('loading')
-    setStatusMsg('正在加载历史评审...')
+    setStatusMsg(t('review.loading_history'))
     try {
       const cached = await fetchCachedReview(id)
       setResult(cached.result)
@@ -105,10 +107,10 @@ export default function ReviewReportPage() {
       setFromCache(true)
       setPhase('done')
     } catch (err: any) {
-      setError(err.message || '加载历史评审失败')
+      setError(err.message || t('review.load_history_failed'))
       setPhase('error')
     }
-  }, [provider, model])
+  }, [provider, model, t])
 
   useEffect(() => {
     if (reviewId) {
@@ -219,18 +221,18 @@ export default function ReviewReportPage() {
           </p>
         ) : result && (
           <p className="text-sm text-gray-500 leading-relaxed -mt-4 bg-gray-800/50 px-4 py-2 rounded-lg border border-gray-700/50">
-            此 PR 实现了 {cleanPrTitle(result.pr_title)}
+            {t('review.pr_implements', { title: cleanPrTitle(result.pr_title) })}
           </p>
         )}
         {result?.usage && (
           <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 -mt-2 px-1">
-            <span>总耗时 {result.usage.total_time_s}s</span>
-            <span>LLM 耗时 {result.usage.llm_time_s}s</span>
-            <span>输入 {result.usage.input_tokens >= 1000 ? `${(result.usage.input_tokens / 1000).toFixed(1)}k` : result.usage.input_tokens} tokens</span>
-            <span>输出 {result.usage.output_tokens >= 1000 ? `${(result.usage.output_tokens / 1000).toFixed(1)}k` : result.usage.output_tokens} tokens</span>
+            <span>{t('review.total_time', { time: result.usage.total_time_s })}</span>
+            <span>{t('review.llm_time', { time: result.usage.llm_time_s })}</span>
+            <span>{t('review.input_tokens', { tokens: result.usage.input_tokens >= 1000 ? `${(result.usage.input_tokens / 1000).toFixed(1)}k` : result.usage.input_tokens })}</span>
+            <span>{t('review.output_tokens', { tokens: result.usage.output_tokens >= 1000 ? `${(result.usage.output_tokens / 1000).toFixed(1)}k` : result.usage.output_tokens })}</span>
             {result.usage.rate_limit_remaining != null && (
               <span className={result.usage.rate_limit_remaining < 10 ? 'text-yellow-400' : ''}>
-                余量 {result.usage.rate_limit_remaining}
+                {t('review.remaining', { count: result.usage.rate_limit_remaining })}
               </span>
             )}
           </div>
@@ -239,13 +241,13 @@ export default function ReviewReportPage() {
         {(phase === 'loading' || phase === 'idle') && (
           <div className="bg-gray-800 border border-gray-700 rounded-lg p-8 text-center">
             <div className="animate-spin w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full mx-auto mb-4" />
-            <p className="text-gray-400">{statusMsg || '正在连接...'}</p>
+            <p className="text-gray-400">{statusMsg || t('review.connecting')}</p>
           </div>
         )}
 
         {phase === 'error' && (
           <div className="bg-red-900/30 border border-red-500 rounded-lg p-5">
-            <h3 className="text-red-400 font-bold mb-2">评审失败</h3>
+            <h3 className="text-red-400 font-bold mb-2">{t('review.review_failed')}</h3>
             <p className="text-red-300">{error}</p>
           </div>
         )}
@@ -258,11 +260,11 @@ export default function ReviewReportPage() {
           <div ref={reviewSectionRef} className="space-y-4">
             <div>
               <h3 className="text-sm font-medium text-gray-400 mb-2 uppercase tracking-wide flex items-center gap-2">
-                代码变更对比
+                {t('review.code_changes')}
                 {phase === 'streaming' && (
                   <span className="text-xs font-normal text-blue-400 animate-pulse flex items-center gap-1 normal-case">
                     <span className="w-1.5 h-1.5 bg-blue-400 rounded-full" />
-                    AI 分析中...
+                    {t('review.ai_analyzing')}
                   </span>
                 )}
               </h3>
@@ -270,14 +272,14 @@ export default function ReviewReportPage() {
                 <DiffViewer filename={currentPatch.filename} language={currentPatch.language} patch={currentPatch.patch} />
               ) : (
                 <div className="bg-gray-800 border border-gray-700 rounded-lg p-6 text-center text-gray-500 text-sm">
-                  等待评审数据...
+                  {t('review.waiting_data')}
                 </div>
               )}
             </div>
 
             {progress && progress.total > 1 && (
               <div className="flex items-center gap-2 text-xs text-gray-500">
-                <span>已评审文件:</span>
+                <span>{t('review.reviewed_files')}</span>
                 <div className="flex gap-1">
                   {patchList.map((_, i) => (
                     <span key={i} className={`w-2 h-2 rounded-full ${
@@ -293,7 +295,7 @@ export default function ReviewReportPage() {
             {streamedFileReviews.length > 0 && (
               <div className="space-y-4 pt-2">
                 <h3 className="text-sm font-medium text-gray-400 uppercase tracking-wide">
-                  已完成 ({streamedFileReviews.length})
+                  {t('review.completed_count', { count: streamedFileReviews.length })}
                 </h3>
                 <FileReviewSection
                   fileReviews={streamedFileReviews}
@@ -301,7 +303,7 @@ export default function ReviewReportPage() {
                   collapsedFiles={collapsedFiles}
                   onToggle={toggleCollapse}
                   colorScheme="green"
-                  noPatchMessage="（无 diff 数据）"
+                  noPatchMessage={t('review.no_diff_data')}
                   findPatch={findPatch}
                 />
               </div>
@@ -329,14 +331,14 @@ export default function ReviewReportPage() {
               {activeResult && activeResult.file_reviews.length > 0 && (
                 <div ref={codeReviewRef} id="code-review" className="space-y-4 scroll-mt-16">
                   <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                    代码审查详情
+                    {t('review.code_review_detail')}
                     <span className="text-sm font-normal text-gray-400">
-                      ({activeResult.file_reviews.length} 个文件)
+                      {t('review.file_count', { count: activeResult.file_reviews.length })}
                     </span>
                   </h2>
                   {fromCache && allPatches.size === 0 && (
                     <p className="text-xs text-gray-500 bg-gray-800 border border-gray-700 rounded px-3 py-2">
-                      缓存数据不含 diff 补丁，仅展示评审结果。如需查看完整 diff，请点击「重新评审」。
+                      {t('review.cache_no_diff')}
                     </p>
                   )}
 
@@ -346,7 +348,7 @@ export default function ReviewReportPage() {
                     collapsedFiles={collapsedFiles}
                     onToggle={toggleCollapse}
                     colorScheme="blue"
-                    noPatchMessage="（无 diff 数据）"
+                    noPatchMessage={t('review.no_diff_data')}
                     findPatch={findPatch}
                   />
                 </div>
@@ -382,7 +384,7 @@ export default function ReviewReportPage() {
               <button
                 onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
                 className="fixed bottom-6 right-6 w-11 h-11 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-full shadow-lg shadow-blue-600/30 flex items-center justify-center transition-all z-40"
-                title="回到顶部"
+                title={t('review.back_to_top')}
               >
                 ↑
               </button>

@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 interface SchedulerStatus {
   running: boolean
   monitored_repos: number
@@ -10,28 +12,30 @@ interface Props {
 }
 
 export default function MonitorPanel({ status, onToggle }: Props) {
+  const { t } = useTranslation()
+
   if (!status) return null
 
   return (
     <div className="mb-4 p-3 bg-gray-800 rounded-lg border border-gray-700">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-sm text-gray-300">自动监控</span>
+        <span className="text-sm text-gray-300">{t('dashboard.auto_monitor')}</span>
         <span className={`flex items-center gap-1.5 text-xs font-medium ${
           status.running ? 'text-green-400' : 'text-gray-500'
         }`}>
           <span className={`w-2 h-2 rounded-full ${
             status.running ? 'bg-green-400 animate-pulse' : 'bg-gray-600'
           }`} />
-          {status.running ? '运行中' : '已停止'}
+          {status.running ? t('dashboard.monitor_running') : t('dashboard.monitor_stopped')}
         </span>
       </div>
       <div className="text-xs text-gray-500 space-y-1">
         <div className="flex justify-between">
-          <span>监控仓库</span>
+          <span>{t('dashboard.monitored_repos')}</span>
           <span>{status.monitored_repos} 个</span>
         </div>
         <div className="flex justify-between">
-          <span>轮询间隔</span>
+          <span>{t('dashboard.polling_interval')}</span>
           <span>{status.interval_seconds}s</span>
         </div>
       </div>
@@ -43,7 +47,7 @@ export default function MonitorPanel({ status, onToggle }: Props) {
             : 'bg-green-900/40 text-green-400 hover:bg-green-900/60'
         }`}
       >
-        {status.running ? '停止监控' : '启动监控'}
+        {status.running ? t('dashboard.stop_monitor') : t('dashboard.start_monitor')}
       </button>
     </div>
   )

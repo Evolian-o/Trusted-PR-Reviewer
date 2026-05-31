@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '../contexts/AuthContext'
 import UrlInput from '../components/UrlInput'
 import ModelSelector from '../components/ModelSelector'
@@ -9,6 +10,7 @@ const URL_PATTERN = /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/
 
 export default function PRInputPage() {
   const { auth } = useAuth()
+  const { t } = useTranslation()
   const [url, setUrl] = useState('')
   const [urlError, setUrlError] = useState('')
   const [provider, setProvider] = useState('deepseek')
@@ -25,12 +27,12 @@ export default function PRInputPage() {
 
   const handleStart = () => {
     if (!url.trim()) {
-      setUrlError('请输入 PR URL')
+      setUrlError(t('prInput.url_required'))
       return
     }
     const match = URL_PATTERN.exec(url.trim())
     if (!match) {
-      setUrlError('URL 格式不正确，示例: https://github.com/owner/repo/pull/123')
+      setUrlError(t('prInput.url_format_error'))
       return
     }
 
@@ -59,7 +61,7 @@ export default function PRInputPage() {
             onClick={() => navigate('/dashboard')}
             className="text-gray-400 hover:text-gray-200 text-sm transition-colors"
           >
-            返回仪表盘
+            {t('prInput.back_to_dashboard')}
           </button>
         </div>
       </nav>
@@ -67,8 +69,8 @@ export default function PRInputPage() {
       <div className="flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-2xl">
           <div className="text-center mb-10">
-            <h2 className="text-3xl font-bold text-white mb-2">新建评审</h2>
-            <p className="text-gray-400">输入 GitHub PR 链接，选择模型后开始智能代码评审</p>
+            <h2 className="text-3xl font-bold text-white mb-2">{t('prInput.new_review')}</h2>
+            <p className="text-gray-400">{t('prInput.description')}</p>
           </div>
 
           <div className="bg-gray-850 border border-gray-700 rounded-xl p-8 space-y-6">
@@ -85,7 +87,7 @@ export default function PRInputPage() {
               onClick={handleStart}
               className="w-full py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-500 transition-colors text-lg"
             >
-              开始评审
+              {t('prInput.start_review')}
             </button>
 
             <div className="text-center">
@@ -93,7 +95,7 @@ export default function PRInputPage() {
                 onClick={() => navigate('/history')}
                 className="text-gray-500 hover:text-gray-300 text-sm transition-colors"
               >
-                评审历史
+                {t('prInput.review_history')}
               </button>
             </div>
           </div>

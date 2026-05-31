@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useAuth } from '../contexts/AuthContext'
 import RepoList from '../components/Dashboard/RepoList'
 import MonitorPanel from '../components/Dashboard/MonitorPanel'
 import RecentReviews from '../components/Dashboard/RecentReviews'
+import LanguageSwitcher from '../components/LanguageSwitcher'
 
 interface Repo {
   id: number
@@ -39,6 +41,7 @@ interface HistoryItem {
 
 export default function DashboardPage() {
   const { auth, logout } = useAuth()
+  const { t } = useTranslation()
   const [repos, setRepos] = useState<Repo[]>([])
   const [monitored, setMonitored] = useState<MonitoredRepo[]>([])
   const [recentReviews, setRecentReviews] = useState<HistoryItem[]>([])
@@ -121,12 +124,12 @@ export default function DashboardPage() {
   const handleAddManualRepo = async () => {
     const trimmed = manualRepo.trim()
     if (!trimmed) {
-      setManualError('请输入仓库名')
+      setManualError(t('dashboard.manual_empty'))
       return
     }
     const parts = trimmed.split('/')
     if (parts.length !== 2 || !parts[0] || !parts[1]) {
-      setManualError('格式不正确，示例: facebook/react')
+      setManualError(t('dashboard.manual_format_error'))
       return
     }
     const [owner, repo] = parts
@@ -140,13 +143,13 @@ export default function DashboardPage() {
         body: JSON.stringify({ owner, repo: repo.replace('.git', '') }),
       })
       if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: '添加失败' }))
-        throw new Error(err.error || '添加失败')
+        const err = await resp.json().catch(() => ({ error: t('dashboard.add_failed') }))
+        throw new Error(err.error || t('dashboard.add_failed'))
       }
       setManualRepo('')
       loadData()
     } catch (e) {
-      setManualError(e instanceof Error ? e.message : '添加失败')
+      setManualError(e instanceof Error ? e.message : t('dashboard.add_failed'))
     } finally {
       setManualAdding(false)
     }
@@ -177,20 +180,21 @@ export default function DashboardPage() {
               onClick={() => navigate('/review')}
               className="bg-blue-600 hover:bg-blue-500 text-white text-sm px-3 py-1.5 rounded-lg transition-colors"
             >
-              + 新建评审
+              {t('dashboard.new_review')}
             </button>
             <button
               onClick={() => navigate('/history')}
               className="text-gray-400 hover:text-gray-200 text-sm transition-colors"
             >
-              评审历史
+              {t('dashboard.review_history')}
             </button>
             <button
               onClick={() => navigate('/settings')}
               className="text-gray-400 hover:text-gray-200 text-sm transition-colors"
             >
-              设置
+              {t('dashboard.settings')}
             </button>
+            <LanguageSwitcher />
             <div className="flex items-center gap-2">
               {auth.user?.avatar_url && (
                 <img src={auth.user.avatar_url} alt="" className="w-6 h-6 rounded-full" />
@@ -200,7 +204,7 @@ export default function DashboardPage() {
                 onClick={handleLogout}
                 className="text-gray-500 hover:text-gray-300 text-sm transition-colors ml-2"
               >
-                退出
+                {t('dashboard.logout')}
               </button>
             </div>
           </div>
@@ -211,9 +215,9 @@ export default function DashboardPage() {
         <div className="flex gap-6">
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-white">仓库列表</h2>
+              <h2 className="text-lg font-semibold text-white">{t('dashboard.repo_list')}</h2>
               <span className="text-sm text-gray-400">
-                已监控 {monitored.length} 个仓库
+                {t('dashboard.monitored_count', { count: monitored.length })}
               </span>
             </div>
             <div className="flex items-center gap-2 mb-3">
@@ -222,7 +226,7 @@ export default function DashboardPage() {
                 value={manualRepo}
                 onChange={(e) => { setManualRepo(e.target.value); setManualError('') }}
                 onKeyDown={(e) => { if (e.key === 'Enter') handleAddManualRepo() }}
-                placeholder="手动添加: owner/repo (如 facebook/react)"
+                placeholder={t('dashboard.manual_placeholder')}
                 className="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <button
@@ -230,7 +234,7 @@ export default function DashboardPage() {
                 disabled={manualAdding}
                 className="px-4 py-2 bg-green-700 hover:bg-green-600 text-white text-sm rounded-lg transition-colors disabled:opacity-50 flex-shrink-0"
               >
-                {manualAdding ? '...' : '添加监控'}
+                {manualAdding ? '...' : t('dashboard.add_monitor')}
               </button>
             </div>
             {manualError && <p className="text-red-400 text-xs -mt-2 mb-3">{manualError}</p>}
@@ -247,7 +251,7 @@ export default function DashboardPage() {
             {monitored.filter((m) => !repos.some((r) => `${r.owner}/${r.repo}` === `${m.owner}/${m.repo}`)).length > 0 && (
               <div className="mt-6">
                 <h3 className="text-sm font-semibold text-gray-400 mb-2 uppercase tracking-wide">
-                  手动添加的仓库 · <span className="font-normal text-gray-500">外部</span>
+                  {t('dashboard.manual_added')} · <span className="font-normal text-gray-500">{t('dashboard.external')}</span>
                 </h3>
                 <div className="space-y-1">
                   {monitored
@@ -262,7 +266,7 @@ export default function DashboardPage() {
                           onClick={() => toggleMonitor(m.owner, m.repo)}
                           className="px-3 py-1 text-xs rounded bg-red-900/40 text-red-400 hover:bg-red-900/60 transition-colors"
                         >
-                          取消监控
+                          {t('dashboard.cancel_monitor')}
                         </button>
                       </div>
                     ))}

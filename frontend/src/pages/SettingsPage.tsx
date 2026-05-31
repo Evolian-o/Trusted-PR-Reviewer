@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { fetchProviders, fetchProviderModels } from '../services/api'
@@ -6,6 +7,7 @@ import type { ProviderInfo } from '../types/review'
 import ProviderManager from '../components/Settings/ProviderManager'
 import ChunkSettings from '../components/Settings/ChunkSettings'
 import NotificationSettings from '../components/Settings/NotificationSettings'
+import LanguageSwitcher from '../components/LanguageSwitcher'
 
 interface Settings {
   poll_interval_seconds: string
@@ -19,6 +21,7 @@ interface Settings {
 }
 
 export default function SettingsPage() {
+  const { t } = useTranslation()
   const { auth } = useAuth()
   const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
@@ -88,13 +91,13 @@ export default function SettingsPage() {
         body: JSON.stringify(settings),
       })
       if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: '保存失败' }))
-        throw new Error(err.error || err.detail || '保存失败')
+        const err = await resp.json().catch(() => ({ error: t('settings.save_failed') }))
+        throw new Error(err.error || err.detail || t('settings.save_failed'))
       }
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch (e) {
-      setError(e instanceof Error ? e.message : '保存失败')
+      setError(e instanceof Error ? e.message : t('settings.save_failed'))
     } finally {
       setLoading(false)
     }
@@ -110,9 +113,9 @@ export default function SettingsPage() {
         body: JSON.stringify(settings.email),
       })
       const data = await resp.json()
-      setTestResult(resp.ok ? 'success' : (data.error || '发送失败'))
+      setTestResult(resp.ok ? 'success' : (data.error || t('settings.email_failed')))
     } catch {
-      setTestResult('请求失败')
+      setTestResult(t('settings.request_failed'))
     } finally {
       setTesting(false)
     }
@@ -132,9 +135,9 @@ export default function SettingsPage() {
     <div className="min-h-screen bg-gray-900">
       <nav className="border-b border-gray-700 bg-gray-850">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
-          <h1 className="text-lg font-bold text-white">设置</h1>
+          <h1 className="text-lg font-bold text-white">{t('settings.page_title')}</h1>
           <button onClick={() => navigate('/dashboard')} className="text-gray-400 hover:text-gray-200 text-sm transition-colors">
-            返回仪表盘
+            {t('settings.back_to_dashboard')}
           </button>
         </div>
       </nav>
@@ -142,10 +145,10 @@ export default function SettingsPage() {
       <main className="max-w-2xl mx-auto px-4 py-8 space-y-8">
         {/* 自动评审 */}
         <section>
-          <h2 className="text-white font-semibold mb-4">自动评审</h2>
+          <h2 className="text-white font-semibold mb-4">{t('settings.auto_review')}</h2>
           <div className="bg-gray-800 rounded-lg p-5 space-y-4">
             <div>
-              <label className="text-gray-400 text-sm block mb-1">默认 LLM 提供商</label>
+              <label className="text-gray-400 text-sm block mb-1">{t('settings.default_provider')}</label>
               <select
                 value={settings.default_provider}
                 onChange={(e) => update('default_provider', e.target.value)}
@@ -157,7 +160,7 @@ export default function SettingsPage() {
               </select>
             </div>
             <div>
-              <label className="text-gray-400 text-sm block mb-1">默认模型</label>
+              <label className="text-gray-400 text-sm block mb-1">{t('settings.default_model')}</label>
               {providerModels.length > 0 ? (
                 <select
                   value={settings.default_model}
@@ -173,20 +176,27 @@ export default function SettingsPage() {
                   type="text"
                   value={settings.default_model}
                   onChange={(e) => update('default_model', e.target.value)}
-                  placeholder={providers.find((p) => p.name === settings.default_provider)?.default_model || '输入模型名'}
+                  placeholder={providers.find((p) => p.name === settings.default_provider)?.default_model || t('settings.model_placeholder')}
                   className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               )}
-              <p className="text-gray-500 text-xs mt-1">自动评审时使用的模型，留空则使用提供商默认</p>
+              <p className="text-gray-500 text-xs mt-1">{t('settings.model_hint')}</p>
             </div>
             <div className="flex items-center gap-3 pt-2">
               <button onClick={handleSave} disabled={loading}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors disabled:opacity-50"
               >
-                {loading ? '保存中...' : '保存提供商设置'}
+                {loading ? t('settings.saving') : t('settings.save_provider')}
               </button>
-              {saved && <span className="text-green-400 text-sm">已保存</span>}
+              {saved && <span className="text-green-400 text-sm">{t('settings.saved')}</span>}
               {error && <span className="text-red-400 text-sm">{error}</span>}
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-medium text-gray-200">{t('settings.lang_label')}</h3>
+              </div>
+              <LanguageSwitcher />
             </div>
           </div>
         </section>
@@ -220,9 +230,9 @@ export default function SettingsPage() {
           <button onClick={handleSave} disabled={loading}
             className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50"
           >
-            {loading ? '保存中...' : '保存设置'}
+            {loading ? t('settings.saving') : t('settings.save_settings')}
           </button>
-          {saved && <span className="text-green-400 text-sm">已保存</span>}
+          {saved && <span className="text-green-400 text-sm">{t('settings.saved')}</span>}
           {error && <span className="text-red-400 text-sm">{error}</span>}
         </div>
       </main>

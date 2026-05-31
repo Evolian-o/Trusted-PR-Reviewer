@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { Issue } from '../types/review'
 import IssueCard from './IssueCard'
 
@@ -8,11 +9,6 @@ interface Props {
 
 const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
 
-const PRIORITY_LABELS: Record<string, string> = {
-  must_fix: '必须修复',
-  should_fix: '应当修复',
-  nice_to_fix: '可选优化',
-}
 const PRIORITY_ORDER = ['must_fix', 'should_fix', 'nice_to_fix']
 
 type PriorityFilter = 'all' | 'must_fix' | 'should_fix' | 'nice_to_fix'
@@ -31,7 +27,14 @@ function groupByPriority(issues: Issue[]): Map<string, Issue[]> {
 }
 
 export default function IssueList({ issues }: Props) {
+  const { t } = useTranslation()
   const [filter, setFilter] = useState<PriorityFilter>('all')
+
+  const PRIORITY_LABELS: Record<string, string> = {
+    must_fix: t('issues.list.priority_must'),
+    should_fix: t('issues.list.priority_should'),
+    nice_to_fix: t('issues.list.priority_nice'),
+  }
 
   const filtered = useMemo(() => {
     if (filter === 'all') return issues
@@ -43,8 +46,8 @@ export default function IssueList({ issues }: Props) {
   if (issues.length === 0) {
     return (
       <div className="bg-gray-800 border border-gray-700 rounded-lg p-5">
-        <h3 className="text-lg font-bold text-white mb-3">发现的问题</h3>
-        <p className="text-green-400 text-sm">未发现问题，代码质量良好。</p>
+        <h3 className="text-lg font-bold text-white mb-3">{t('issues.list.title')}</h3>
+        <p className="text-green-400 text-sm">{t('issues.list.none')}</p>
       </div>
     )
   }
@@ -59,7 +62,7 @@ export default function IssueList({ issues }: Props) {
     <div className="bg-gray-800 border border-gray-700 rounded-lg p-5" id="issues-summary">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <h3 className="text-lg font-bold text-white">
-          发现的问题 ({issues.length})
+          {t('issues.list.title_count', { count: issues.length })}
         </h3>
         <div className="flex gap-1.5 flex-wrap">
           {(['all', 'must_fix', 'should_fix', 'nice_to_fix'] as PriorityFilter[]).map((f) => {
@@ -75,7 +78,7 @@ export default function IssueList({ issues }: Props) {
                     : 'bg-gray-700 text-gray-400 hover:text-gray-200'
                 }`}
               >
-                {f === 'all' ? '全部' : PRIORITY_LABELS[f]} ({count})
+                {f === 'all' ? t('issues.list.filter_all') : PRIORITY_LABELS[f]} ({count})
               </button>
             )
           })}
@@ -83,7 +86,7 @@ export default function IssueList({ issues }: Props) {
       </div>
 
       {filtered.length === 0 ? (
-        <p className="text-gray-500 text-sm">该优先级下没有问题。</p>
+        <p className="text-gray-500 text-sm">{t('issues.list.none_in_priority')}</p>
       ) : (
         <div className="space-y-5">
           {PRIORITY_ORDER.map((priority) => {

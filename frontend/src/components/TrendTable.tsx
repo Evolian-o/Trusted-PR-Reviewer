@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import type { TrendEntry } from '../types/review'
 
 interface Props {
@@ -7,6 +8,7 @@ interface Props {
 }
 
 export default function TrendTable({ trend, currentResultId }: Props) {
+  const { t } = useTranslation()
   const navigate = useNavigate()
 
   if (trend.length === 0) return null
@@ -20,61 +22,61 @@ export default function TrendTable({ trend, currentResultId }: Props) {
   return (
     <div className="bg-gray-800 border border-gray-700 rounded-lg p-5">
       <h3 className="text-lg font-bold text-white mb-4">
-        历史趋势
+        {t('history.trend.title')}
         <span className="text-sm font-normal text-gray-400 ml-2">
-          最近 {trend.length} 次评审
+          {t('history.trend.recent', { count: trend.length })}
         </span>
       </h3>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="text-gray-400 border-b border-gray-700">
-              <th className="text-left py-2 pr-3 font-medium">提交人</th>
-              <th className="text-left py-2 px-3 font-medium">PR</th>
-              <th className="text-center py-2 px-3 font-medium">风险</th>
-              <th className="text-center py-2 px-3 font-medium">问题</th>
-              <th className="text-center py-2 px-3 font-medium">综合</th>
-              <th className="text-center py-2 px-3 font-medium">安全</th>
-              <th className="text-right py-2 pl-3 font-medium">日期</th>
+              <th className="text-left py-2 pr-3 font-medium">{t('history.trend.author')}</th>
+              <th className="text-left py-2 px-3 font-medium">{t('history.trend.pr')}</th>
+              <th className="text-center py-2 px-3 font-medium">{t('history.trend.risk')}</th>
+              <th className="text-center py-2 px-3 font-medium">{t('history.trend.issues')}</th>
+              <th className="text-center py-2 px-3 font-medium">{t('history.trend.overall')}</th>
+              <th className="text-center py-2 px-3 font-medium">{t('history.trend.security')}</th>
+              <th className="text-right py-2 pl-3 font-medium">{t('history.trend.date')}</th>
             </tr>
           </thead>
           <tbody>
-            {trend.map((t, i) => {
-              const isCurrent = t.id === currentResultId || i === 0
+            {trend.map((entry, i) => {
+              const isCurrent = entry.id === currentResultId || i === 0
               const riskColor =
-                t.risk_level === 'high' ? 'text-red-400' :
-                t.risk_level === 'medium' ? 'text-yellow-400' : 'text-green-400'
-              const scoreVal = t.scores?.overall
-              const secVal = t.scores?.security
+                entry.risk_level === 'high' ? 'text-red-400' :
+                entry.risk_level === 'medium' ? 'text-yellow-400' : 'text-green-400'
+              const scoreVal = entry.scores?.overall
+              const secVal = entry.scores?.security
               return (
                 <tr
-                  key={t.id}
-                  onClick={() => goToReview(t)}
+                  key={entry.id}
+                  onClick={() => goToReview(entry)}
                   className={`border-b border-gray-700/50 cursor-pointer ${
                     isCurrent ? 'bg-blue-900/20' : 'hover:bg-gray-750'
                   }`}
                 >
                   <td className="py-2.5 pr-3">
                     <span className="text-gray-400 text-xs whitespace-nowrap">
-                      {t.owner}/{t.repo}
+                      {entry.owner}/{entry.repo}
                     </span>
                   </td>
                   <td className="py-2.5 px-3">
                     <span className="text-gray-200 truncate max-w-[180px] block">
-                      #{t.pull_number} {t.pr_title}
+                      #{entry.pull_number} {entry.pr_title}
                     </span>
                   </td>
                   <td className="text-center py-2.5 px-3">
                     <span className={`text-xs font-bold ${riskColor}`}>
-                      {t.risk_level === 'high' ? '高' : t.risk_level === 'medium' ? '中' : '低'}
+                      {entry.risk_level === 'high' ? t('history.trend.risk_high') : entry.risk_level === 'medium' ? t('history.trend.risk_medium') : t('history.trend.risk_low')}
                     </span>
                   </td>
                   <td className="text-center py-2.5 px-3">
                     <span className={`font-mono font-bold ${
-                      t.issue_count > 5 ? 'text-red-400' :
-                      t.issue_count > 0 ? 'text-yellow-400' : 'text-green-400'
+                      entry.issue_count > 5 ? 'text-red-400' :
+                      entry.issue_count > 0 ? 'text-yellow-400' : 'text-green-400'
                     }`}>
-                      {t.issue_count}
+                      {entry.issue_count}
                     </span>
                   </td>
                   <td className="text-center py-2.5 px-3">
@@ -94,7 +96,7 @@ export default function TrendTable({ trend, currentResultId }: Props) {
                     ) : <span className="text-gray-600">-</span>}
                   </td>
                   <td className="text-right py-2.5 pl-3 text-gray-500 text-xs whitespace-nowrap">
-                    {t.created_at?.slice(0, 10) || '-'}
+                    {entry.created_at?.slice(0, 10) || '-'}
                   </td>
                 </tr>
               )

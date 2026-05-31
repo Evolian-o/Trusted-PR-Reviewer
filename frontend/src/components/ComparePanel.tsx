@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import type { ReviewResult, ModelInfo } from '../types/review'
 
 interface Props {
@@ -12,6 +13,8 @@ interface Props {
 export default function ComparePanel({
   result, compareResult, modelInfo, compareModel, viewMode, onViewModeChange,
 }: Props) {
+  const { t } = useTranslation()
+
   if (!compareResult) return null
 
   return (
@@ -25,7 +28,7 @@ export default function ComparePanel({
               : 'text-gray-400 hover:text-gray-200'
           }`}
         >
-          {modelInfo?.model || '主模型'} ({result.issues.length} 问题)
+          {modelInfo?.model || t('review.compare.primary')} ({result.issues.length} {t('review.compare.issue_suffix')})
         </button>
         <button
           onClick={() => onViewModeChange('compare')}
@@ -35,13 +38,18 @@ export default function ComparePanel({
               : 'text-gray-400 hover:text-gray-200'
           }`}
         >
-          {compareModel || '对比模型'} ({compareResult.issues.length} 问题)
+          {compareModel || t('review.compare.compare')} ({compareResult.issues.length} {t('review.compare.issue_suffix')})
         </button>
       </div>
 
       <div className="grid grid-cols-4 gap-3 text-center">
         {['overall', 'security', 'bug', 'performance'].map((dim) => {
-          const labels: Record<string, string> = { overall: '综合', security: '安全', bug: 'Bug', performance: '性能' }
+          const labels: Record<string, string> = {
+            overall: t('review.info.dim_overall'),
+            security: t('review.info.dim_security'),
+            bug: t('review.info.dim_bug'),
+            performance: t('review.info.dim_performance'),
+          }
           const pVal = result.scores[dim] || 0
           const cVal = compareResult.scores[dim] || 0
           const diff = cVal - pVal

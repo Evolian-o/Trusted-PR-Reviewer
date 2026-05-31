@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useParams } from 'react-router-dom'
 import { fetchSharedReview } from '../services/api'
 import type { ReviewResult } from '../types/review'
@@ -6,6 +7,7 @@ import PRInfoBar from '../components/PRInfoBar'
 import IssueList from '../components/IssueList'
 
 export default function SharePage() {
+  const { t } = useTranslation()
   const { token } = useParams<{ token: string }>()
   const [result, setResult] = useState<ReviewResult | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -31,8 +33,8 @@ export default function SharePage() {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="bg-red-900/30 border border-red-500 rounded-lg p-6 max-w-md text-center">
-          <h2 className="text-red-400 font-bold text-lg mb-2">无法加载</h2>
-          <p className="text-red-300 text-sm">{error || '数据不存在'}</p>
+          <h2 className="text-red-400 font-bold text-lg mb-2">{t('share.load_error')}</h2>
+          <p className="text-red-300 text-sm">{error || t('share.data_not_found')}</p>
         </div>
       </div>
     )
@@ -42,13 +44,13 @@ export default function SharePage() {
     <div className="min-h-screen bg-gray-900 py-8 px-4">
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="text-center mb-2">
-          <p className="text-xs text-gray-600">通过 Trusted PR Reviewer 分享的评审报告</p>
+          <p className="text-xs text-gray-600">{t('share.shared_via')}</p>
         </div>
 
         <PRInfoBar result={result} />
 
         <div className="bg-gray-800 border border-gray-700 rounded-lg p-5">
-          <h3 className="text-lg font-bold text-white mb-3">评审总结</h3>
+          <h3 className="text-lg font-bold text-white mb-3">{t('share.review_summary')}</h3>
           <pre className="text-gray-300 leading-relaxed whitespace-pre-wrap font-sans text-sm">
             {result.summary}
           </pre>
@@ -57,7 +59,7 @@ export default function SharePage() {
         {result.file_reviews.length > 0 && (
           <div className="space-y-4">
             <h2 className="text-lg font-bold text-white">
-              审查文件 ({result.file_reviews.length})
+              {t('share.reviewed_files', { count: result.file_reviews.length })}
             </h2>
             {result.file_reviews.map((fr) => (
               <div key={fr.file} className="bg-gray-800 border border-gray-700 rounded-lg p-4">
@@ -89,7 +91,7 @@ export default function SharePage() {
                         <p className="text-gray-300 text-sm">{issue.description}</p>
                         {issue.suggestion && (
                           <p className="text-gray-400 text-xs mt-1">
-                            <span className="text-green-400">建议: </span>{issue.suggestion}
+                            <span className="text-green-400">{t('share.suggestion')}</span>{issue.suggestion}
                           </p>
                         )}
                       </div>
@@ -110,7 +112,7 @@ export default function SharePage() {
             rel="noopener noreferrer"
             className="text-sm text-blue-400 hover:text-blue-300"
           >
-            在 GitHub 查看 PR #{result.pull_number} &rarr;
+            {t('share.view_on_github', { number: result.pull_number })}
           </a>
         </div>
       </div>

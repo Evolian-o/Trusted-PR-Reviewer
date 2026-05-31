@@ -1,8 +1,10 @@
+import { useTranslation } from 'react-i18next'
+
 const DIMENSIONS = [
-  { key: 'bug', label: 'Bug 风险' },
-  { key: 'security', label: '安全漏洞' },
-  { key: 'performance', label: '性能问题' },
-  { key: 'style', label: '代码规范' },
+  { key: 'bug', i18nKey: 'common.dim_bug' as const },
+  { key: 'security', i18nKey: 'common.dim_security' as const },
+  { key: 'performance', i18nKey: 'common.dim_performance' as const },
+  { key: 'style', i18nKey: 'common.dim_style' as const },
 ]
 
 interface Props {
@@ -11,6 +13,7 @@ interface Props {
 }
 
 export default function DimensionChecklist({ selected, onChange }: Props) {
+  const { t } = useTranslation()
   const toggle = (key: string) => {
     if (selected.includes(key)) {
       onChange(selected.filter((d) => d !== key))
@@ -21,7 +24,7 @@ export default function DimensionChecklist({ selected, onChange }: Props) {
 
   return (
     <div>
-      <label className="block text-sm font-medium mb-2 text-gray-300">评审维度</label>
+      <label className="block text-sm font-medium mb-2 text-gray-300">{t('common.dim_label')}</label>
       <div className="flex flex-wrap gap-x-5 gap-y-1.5">
         {DIMENSIONS.map((d) => (
           <label
@@ -34,7 +37,7 @@ export default function DimensionChecklist({ selected, onChange }: Props) {
               onChange={() => toggle(d.key)}
               className="accent-blue-500"
             />
-            {d.label}
+            {t(d.i18nKey)}
           </label>
         ))}
       </div>

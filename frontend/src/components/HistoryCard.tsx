@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import type { ReviewResult } from '../types/review'
 import { formatLocalTime } from '../utils/time'
 import { cleanPrTitle } from '../utils/text'
@@ -32,14 +33,16 @@ const RISK_COLORS: Record<string, string> = {
   medium: 'bg-yellow-600',
   low: 'bg-green-600',
 }
-const RISK_LABELS: Record<string, string> = {
-  high: '高风险',
-  medium: '中风险',
-  low: '低风险',
-}
 
 export default function HistoryCard({ review, expanded, onToggle, onDelete }: Props) {
+  const { t } = useTranslation()
   const navigate = useNavigate()
+
+  const RISK_LABELS: Record<string, string> = {
+    high: t('history.risk_high'),
+    medium: t('history.risk_medium'),
+    low: t('history.risk_low'),
+  }
   let result: ReviewResult | null = null
   if (review.result_json) {
     try {
@@ -71,9 +74,9 @@ export default function HistoryCard({ review, expanded, onToggle, onDelete }: Pr
           {RISK_LABELS[review.risk_level] || review.risk_level}
         </span>
         <span className="text-red-400 text-sm flex-shrink-0">
-          {review.issue_count} 问题
+          {t('history.issues_count', { count: review.issue_count })}
         </span>
-        <span className="text-gray-500 flex-shrink-0">{expanded ? '收起' : '展开'}</span>
+        <span className="text-gray-500 flex-shrink-0">{expanded ? t('history.collapse') : t('history.expand')}</span>
       </div>
 
       {expanded && result && (
@@ -84,7 +87,7 @@ export default function HistoryCard({ review, expanded, onToggle, onDelete }: Pr
             </p>
           ) : (
             <p className="text-gray-500 text-sm mt-3 mb-1 leading-relaxed">
-              此 PR 实现了 {cleanPrTitle(review.pr_title)}
+              {t('history.pr_description', { title: cleanPrTitle(review.pr_title) })}
             </p>
           )}
           {result.summary && (
@@ -103,13 +106,13 @@ export default function HistoryCard({ review, expanded, onToggle, onDelete }: Pr
               }}
               className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded transition-colors"
             >
-              查看完整报告
+              {t('history.view_full')}
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); onDelete() }}
               className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-sm rounded transition-colors"
             >
-              删除记录
+              {t('history.delete_record')}
             </button>
           </div>
         </div>

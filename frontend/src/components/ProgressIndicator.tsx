@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import type { ReviewProgress } from '../types/review'
 
 interface Props {
@@ -6,16 +7,18 @@ interface Props {
   model?: string
 }
 
-const PHASE_CONFIG: Record<string, { label: string; color: string }> = {
-  fetching: { label: '拉取 PR', color: '#6366f1' },
-  chunking: { label: '智能分片', color: '#8b5cf6' },
-  reviewing: { label: '评审中', color: '#2563eb' },
-  reviewing_security: { label: '安全检查', color: '#ef4444' },
-  reviewing_normal: { label: '常规评审', color: '#2563eb' },
-  summarizing: { label: '汇总结果', color: '#10b981' },
-}
-
 export default function ProgressIndicator({ progress, provider, model }: Props) {
+  const { t } = useTranslation()
+
+  const PHASE_CONFIG: Record<string, { label: string; color: string }> = {
+    fetching: { label: t('review.phase.fetching'), color: '#6366f1' },
+    chunking: { label: t('review.phase.chunking'), color: '#8b5cf6' },
+    reviewing: { label: t('review.phase.reviewing'), color: '#2563eb' },
+    reviewing_security: { label: t('review.phase.security'), color: '#ef4444' },
+    reviewing_normal: { label: t('review.phase.normal'), color: '#2563eb' },
+    summarizing: { label: t('review.phase.summarizing'), color: '#10b981' },
+  }
+
   const pct = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0
   const cfg = PHASE_CONFIG[progress.phase] || PHASE_CONFIG.reviewing
 
@@ -24,7 +27,7 @@ export default function ProgressIndicator({ progress, provider, model }: Props) 
       {/* 模型标签 */}
       {provider && model && (
         <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500">当前模型</span>
+          <span className="text-xs text-gray-500">{t('review.phase.current_model')}</span>
           <span className="text-xs font-mono bg-blue-900/40 text-blue-300 border border-blue-800 px-2 py-0.5 rounded">
             {provider} / {model}
           </span>
