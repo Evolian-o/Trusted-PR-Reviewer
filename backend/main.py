@@ -18,6 +18,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"), override=True)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from routers import health, auth, repos, providers, scheduler, review, history, settings
 from services.scheduler import restore_all_schedulers
@@ -73,3 +74,17 @@ app.include_router(scheduler.router)
 app.include_router(review.router)
 app.include_router(history.router)
 app.include_router(settings.router)
+
+FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+FRONTEND_DIST = os.path.abspath(FRONTEND_DIST)
+
+if os.path.isdir(FRONTEND_DIST):
+    app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        from fastapi.responses import FileResponse
+        index_path = os.path.join(FRONTEND_DIST, "index.html")
+        if os.path.isfile(index_path):
+            return FileResponse(index_path)
+        return {"error": "前端构建产物不存在，请先构建前端: cd frontend && npm run build"}
