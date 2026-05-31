@@ -39,8 +39,18 @@ async def auto_review_pr(owner: str, repo: str, pull_number: int, pr_info: dict,
 
 
 async def _get_default_provider(user_id: int):
-    provider_name = await get_setting(user_id, "default_provider", "deepseek")
-    return get_provider(provider_name, user_id=user_id)
+    from services.llm_providers.factory import list_providers as _list_providers
+    provider_name = await get_setting(user_id, "default_provider", "")
+    if provider_name:
+        try:
+            return get_provider(provider_name, user_id=user_id)
+        except ValueError:
+            pass
+    # 回退到第一个可用 provider（通常是 ollama，无需 API Key）
+    available = _list_providers()
+    if not available:
+        raise RuntimeError("没有可用的 LLM Provider，请先配置 API Key 或安装 Ollama")
+    return get_provider(available[0], user_id=user_id)
 
 
 async def _get_default_model(provider_name: str, user_id: int) -> str | None:
