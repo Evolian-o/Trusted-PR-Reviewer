@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom'
 import type { TrendEntry } from '../types/review'
 
 interface Props {
@@ -6,7 +7,15 @@ interface Props {
 }
 
 export default function TrendTable({ trend, currentResultId }: Props) {
-  if (trend.length <= 1) return null
+  const navigate = useNavigate()
+
+  if (trend.length === 0) return null
+
+  const goToReview = (t: TrendEntry) => {
+    const params = new URLSearchParams()
+    params.set('reviewId', String(t.id))
+    navigate(`/review/${t.owner}/${t.repo}/${t.pull_number}?${params.toString()}`)
+  }
 
   return (
     <div className="bg-gray-800 border border-gray-700 rounded-lg p-5">
@@ -20,7 +29,8 @@ export default function TrendTable({ trend, currentResultId }: Props) {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-gray-400 border-b border-gray-700">
-              <th className="text-left py-2 pr-4 font-medium">PR</th>
+              <th className="text-left py-2 pr-3 font-medium">提交人</th>
+              <th className="text-left py-2 px-3 font-medium">PR</th>
               <th className="text-center py-2 px-3 font-medium">风险</th>
               <th className="text-center py-2 px-3 font-medium">问题</th>
               <th className="text-center py-2 px-3 font-medium">综合</th>
@@ -39,12 +49,18 @@ export default function TrendTable({ trend, currentResultId }: Props) {
               return (
                 <tr
                   key={t.id}
-                  className={`border-b border-gray-700/50 ${
+                  onClick={() => goToReview(t)}
+                  className={`border-b border-gray-700/50 cursor-pointer ${
                     isCurrent ? 'bg-blue-900/20' : 'hover:bg-gray-750'
                   }`}
                 >
-                  <td className="py-2.5 pr-4">
-                    <span className="text-gray-200 truncate max-w-[200px] block">
+                  <td className="py-2.5 pr-3">
+                    <span className="text-gray-400 text-xs whitespace-nowrap">
+                      {t.owner}/{t.repo}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-3">
+                    <span className="text-gray-200 truncate max-w-[180px] block">
                       #{t.pull_number} {t.pr_title}
                     </span>
                   </td>

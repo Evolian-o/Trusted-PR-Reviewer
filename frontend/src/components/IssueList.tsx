@@ -6,13 +6,6 @@ interface Props {
   issues: Issue[]
 }
 
-const CATEGORY_LABELS: Record<string, string> = {
-  security: '安全漏洞',
-  bug: '逻辑缺陷',
-  performance: '性能问题',
-  style: '代码风格',
-}
-const CATEGORY_ORDER = ['security', 'bug', 'performance', 'style']
 const SEVERITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
 
 const PRIORITY_LABELS: Record<string, string> = {

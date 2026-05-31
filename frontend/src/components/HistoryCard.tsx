@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import type { ReviewResult } from '../types/review'
 import { formatLocalTime } from '../utils/time'
+import { cleanPrTitle } from '../utils/text'
 
 interface Props {
   review: {
@@ -77,8 +78,17 @@ export default function HistoryCard({ review, expanded, onToggle, onDelete }: Pr
 
       {expanded && result && (
         <div className="px-4 pb-4 border-t border-gray-700">
+          {result.pr_description ? (
+            <p className="text-gray-200 text-sm mt-3 mb-1 leading-relaxed">
+              {result.pr_description}
+            </p>
+          ) : (
+            <p className="text-gray-500 text-sm mt-3 mb-1 leading-relaxed">
+              此 PR 实现了 {cleanPrTitle(review.pr_title)}
+            </p>
+          )}
           {result.summary && (
-            <p className="text-gray-300 text-sm mt-3 mb-3 whitespace-pre-wrap line-clamp-3">{result.summary}</p>
+            <p className="text-gray-500 text-xs mt-2 mb-3 whitespace-pre-wrap line-clamp-2">{result.summary}</p>
           )}
 
           <div className="flex gap-2 mt-2">

@@ -18,11 +18,28 @@ export interface FileReview {
   suggestions: string[]
 }
 
+export interface RewrittenFile {
+  filename: string
+  language: string
+  content: string
+  issues_fixed: number
+}
+
+export interface UsageMetrics {
+  total_time_s: number
+  llm_time_s: number
+  input_tokens: number
+  output_tokens: number
+  rate_limit_remaining: number | null
+}
+
 export interface ReviewResult {
   owner: string
   repo: string
   pull_number: number
   pr_title: string
+  pr_description: string
+  pr_merged: boolean
   files_changed: number
   additions: number
   deletions: number
@@ -34,6 +51,8 @@ export interface ReviewResult {
   scores: Record<string, number>
   share_token: string
   github_review_id: number | null
+  rewritten_files: RewrittenFile[]
+  usage: UsageMetrics | null
 }
 
 export interface ReviewProgress {
@@ -47,6 +66,8 @@ export interface ReviewProgress {
 
 export interface TrendEntry {
   id: number
+  owner: string
+  repo: string
   pr_title: string
   pull_number: number
   risk_level: string

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { fetchProviders, fetchProviderModels } from '../services/api'
 import type { ProviderInfo } from '../types/review'
@@ -19,6 +20,7 @@ interface Settings {
 
 export default function SettingsPage() {
   const { auth } = useAuth()
+  const navigate = useNavigate()
   const [loading, setLoading] = useState(false)
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)

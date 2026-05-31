@@ -1,5 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { ModelInfo } from '../types/review'
+
+type MergeState = 'idle' | 'merging' | 'merged' | 'failed'
 
 interface Props {
   owner: string
@@ -12,13 +14,45 @@ interface Props {
   model: string | null
 }
 
+const LS_KEY = (owner: string, repo: string, pr: string) => `merge-state:${owner}/${repo}/${pr}`
+
 export default function ReportHeader({ owner, repo, pr, modelInfo, fromCache, prUrl, provider, model }: Props) {
-  const [merging, setMerging] = useState(false)
+  const [mergeState, setMergeState] = useState<MergeState>(() => {
+    const saved = localStorage.getItem(LS_KEY(owner, repo, pr))
+    return (saved === 'merged') ? 'merged' : 'idle'
+  })
   const [mergeResult, setMergeResult] = useState<{ ok: boolean; message: string } | null>(null)
 
+  // 组件挂载时用 GitHub API 验证真实合并状态
+  useEffect(() => {
+    const lsKey = LS_KEY(owner, repo, pr)
+    // localStorage 已有合并记录则跳过 API 调用
+    if (localStorage.getItem(lsKey) === 'merged') return
+
+    fetch(`/api/repos/${owner}/${repo}/pulls/${pr}`, { credentials: 'include' })
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
+      .then(data => {
+        if (data.merged) {
+          setMergeState('merged')
+          localStorage.setItem(lsKey, 'merged')
+        }
+      })
+      .catch(err => {
+        console.warn('[merge-state] GitHub API 检查失败:', err.message)
+      })
+  }, [owner, repo, pr])
+
   const handleMerge = async () => {
+    if (mergeState === 'failed') {
+      setMergeState('idle')
+      setMergeResult(null)
+      return
+    }
     if (!window.confirm(`确定要合并 ${owner}/${repo}#${pr} 吗？`)) return
-    setMerging(true)
+    setMergeState('merging')
     setMergeResult(null)
     try {
       const resp = await fetch(`/api/repos/${owner}/${repo}/pulls/${pr}/merge`, {
@@ -30,13 +64,15 @@ export default function ReportHeader({ owner, repo, pr, modelInfo, fromCache, pr
       const data = await resp.json()
       if (resp.ok) {
         setMergeResult({ ok: true, message: data.message || '合并成功' })
+        setMergeState('merged')
+        localStorage.setItem(LS_KEY(owner, repo, pr), 'merged')
       } else {
         setMergeResult({ ok: false, message: data.error || '合并失败' })
+        setMergeState('failed')
       }
     } catch {
       setMergeResult({ ok: false, message: '网络错误，请重试' })
-    } finally {
-      setMerging(false)
+      setMergeState('failed')
     }
   }
 
@@ -83,10 +119,19 @@ export default function ReportHeader({ owner, repo, pr, modelInfo, fromCache, pr
           </a>
           <button
             onClick={handleMerge}
-            disabled={merging}
-            className="text-sm px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-lg transition-colors disabled:opacity-50"
+            disabled={mergeState === 'merging' || mergeState === 'merged'}
+            className={`text-sm px-4 py-1.5 rounded-lg transition-colors disabled:opacity-60 ${
+              mergeState === 'failed'
+                ? 'border border-red-500 text-red-400 hover:bg-red-900/30'
+                : mergeState === 'merged'
+                  ? 'bg-green-700 text-white'
+                  : 'bg-green-700 hover:bg-green-600 text-white'
+            }`}
           >
-            {merging ? '合并中...' : '合并 PR'}
+            {mergeState === 'merging' ? '合并中...' :
+             mergeState === 'merged' ? '已合并' :
+             mergeState === 'failed' ? '合并失败 · 重试' :
+             '合并 PR'}
           </button>
         </div>
       </div>

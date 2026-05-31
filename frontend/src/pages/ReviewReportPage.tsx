@@ -13,6 +13,8 @@ import TrendTable from '../components/TrendTable'
 import ComparePanel from '../components/ComparePanel'
 import ReportHeader from '../components/ReportHeader'
 import ReviewSidebar from '../components/ReviewSidebar'
+import RewrittenCodeSection from '../components/RewrittenCodeSection'
+import { cleanPrTitle } from '../utils/text'
 
 /** 从分片文件名推导原始文件名来匹配 patch */
 function findPatch(patches: Map<string, FileInfo>, chunkName: string): FileInfo | undefined {
@@ -144,9 +146,13 @@ export default function ReviewReportPage() {
 
   const patchList = useMemo(() => Array.from(allPatches.values()), [allPatches])
 
+  // 结果就绪后：同步合并状态 + 加载趋势
   useEffect(() => {
     if (phase === 'done' && result) {
-      fetchRepoStats(result.owner, result.repo).then(setTrend).catch(() => setTrend([]))
+      if (result.pr_merged) {
+        localStorage.setItem(`merge-state:${result.owner}/${result.repo}/${result.pull_number}`, 'merged')
+      }
+      fetchRepoStats(result.owner).then(setTrend).catch(() => setTrend([]))
     }
   }, [phase, result])
 
@@ -164,7 +170,7 @@ export default function ReviewReportPage() {
   }
 
   const scrollToFile = (filename: string) => {
-    setCollapsedFiles((prev) => {
+    setCollapsedFiles((_prev) => {
       const allFiles = filesForNav.map(fr => fr.file)
       const next = new Set(allFiles)
       next.delete(filename)
@@ -173,10 +179,6 @@ export default function ReviewReportPage() {
     setTimeout(() => {
       document.getElementById(`file-${filename}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }, 60)
-  }
-
-  const scrollTo = (id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   return (
@@ -207,6 +209,28 @@ export default function ReviewReportPage() {
             modelInfo={modelInfo} fromCache={fromCache}
             prUrl={prUrl} provider={provider} model={model}
           />
+        )}
+        {result?.pr_description ? (
+          <p className="text-sm text-gray-400 leading-relaxed -mt-4 bg-gray-800/50 px-4 py-2 rounded-lg border border-gray-700/50">
+            {result.pr_description}
+          </p>
+        ) : result && (
+          <p className="text-sm text-gray-500 leading-relaxed -mt-4 bg-gray-800/50 px-4 py-2 rounded-lg border border-gray-700/50">
+            此 PR 实现了 {cleanPrTitle(result.pr_title)}
+          </p>
+        )}
+        {result?.usage && (
+          <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 -mt-2 px-1">
+            <span>总耗时 {result.usage.total_time_s}s</span>
+            <span>LLM 耗时 {result.usage.llm_time_s}s</span>
+            <span>输入 {result.usage.input_tokens >= 1000 ? `${(result.usage.input_tokens / 1000).toFixed(1)}k` : result.usage.input_tokens} tokens</span>
+            <span>输出 {result.usage.output_tokens >= 1000 ? `${(result.usage.output_tokens / 1000).toFixed(1)}k` : result.usage.output_tokens} tokens</span>
+            {result.usage.rate_limit_remaining != null && (
+              <span className={result.usage.rate_limit_remaining < 10 ? 'text-yellow-400' : ''}>
+                余量 {result.usage.rate_limit_remaining}
+              </span>
+            )}
+          </div>
         )}
 
         {(phase === 'loading' || phase === 'idle') && (
@@ -299,7 +323,7 @@ export default function ReviewReportPage() {
               </div>
               <SummaryCard result={result} />
 
-              {activeResult.file_reviews.length > 0 && (
+              {activeResult && activeResult.file_reviews.length > 0 && (
                 <div ref={codeReviewRef} id="code-review" className="space-y-4 scroll-mt-16">
                   <h2 className="text-lg font-bold text-white flex items-center gap-2">
                     代码审查详情
@@ -325,8 +349,20 @@ export default function ReviewReportPage() {
                 </div>
               )}
 
-              <IssueList issues={activeResult.issues} />
+              <IssueList issues={activeResult ? activeResult.issues : []} />
               <TrendTable trend={trend} currentResultId={(result as any)?.id} />
+
+              {result.rewritten_files && result.rewritten_files.length > 0 && (
+                <RewrittenCodeSection
+                  rewrittenFiles={result.rewritten_files}
+                  fileReviews={result.file_reviews}
+                  owner={result.owner}
+                  repo={result.repo}
+                  pullNumber={result.pull_number}
+                  provider={provider}
+                  model={model}
+                />
+              )}
 
               <div ref={exportRef} id="export" className="scroll-mt-16">
                 <ExportToolbar result={result} />

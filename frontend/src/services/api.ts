@@ -1,4 +1,4 @@
-import type { ReviewProgress, ReviewResult, FileReview, ProviderInfo, CustomProviderInput, TrendEntry } from '../types/review'
+import type { ReviewProgress, ReviewResult, FileReview, FileInfo, ProviderInfo, CustomProviderInput, TrendEntry } from '../types/review'
 
 export async function checkAuthStatus(): Promise<{
   authenticated: boolean
@@ -213,8 +213,10 @@ export async function fetchSharedReview(token: string): Promise<ReviewResult> {
   return data as ReviewResult
 }
 
-export async function fetchRepoStats(owner: string, repo: string): Promise<TrendEntry[]> {
-  const resp = await fetch(`/api/history/stats?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`, { credentials: 'include' })
+export async function fetchRepoStats(owner: string, repo?: string): Promise<TrendEntry[]> {
+  const params = new URLSearchParams({ owner })
+  if (repo) params.set('repo', repo)
+  const resp = await fetch(`/api/history/stats?${params.toString()}`, { credentials: 'include' })
   const data = await resp.json()
   return data.trend || []
 }
