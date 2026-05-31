@@ -7,6 +7,19 @@ class MergeBody(BaseModel):
     merge_method: str = "merge"
 
 
+class FixPRBody(BaseModel):
+    rewritten_files: list[dict]
+
+
+class SuggestFixBody(BaseModel):
+    filename: str
+    language: str
+    current_code: str
+    user_request: str
+    provider: str = "deepseek"
+    model: str | None = None
+
+
 class MonitorBody(BaseModel):
     owner: str
     repo: str
@@ -16,6 +29,20 @@ class CreatePRBody(BaseModel):
     title: str
     head: str
     base: str = "main"
+
+
+class OptimizeCodeBody(BaseModel):
+    filename: str
+    language: str
+    current_code: str
+    provider: str = "deepseek"
+    model: str | None = None
+
+
+class PolishReviewBody(BaseModel):
+    draft_text: str
+    provider: str = "deepseek"
+    model: str | None = None
 
 
 class CustomProviderBody(BaseModel):
