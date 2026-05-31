@@ -26,17 +26,40 @@ const BACKEND_URL = `http://localhost:${BACKEND_PORT}`
 
 function getBackendPath() {
   if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'backend', 'main.py')
+    return path.join(process.resourcesPath, 'backend', 'backend.exe')
   }
+  // 开发模式: 优先使用 PyInstaller 编译的 exe（更快启动）
+  const exePath = path.join(__dirname, '..', 'backend', 'dist', 'backend.exe')
+  try {
+    if (require('fs').existsSync(exePath)) {
+      return exePath
+    }
+  } catch (_) { /* fs 不可用 */ }
+  // 回退到 Python 源码模式
   return path.join(__dirname, '..', 'backend', 'main.py')
+}
+
+function getFrontendPath() {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'frontend', 'dist')
+  }
+  return path.join(__dirname, '..', 'frontend', 'dist')
 }
 
 async function startBackend() {
   const backendPath = getBackendPath()
+  const isExe = backendPath.endsWith('.exe')
 
-  backendProcess = spawn('python', [backendPath], {
+  const cmd = isExe ? backendPath : 'python'
+  const args = isExe ? [] : [backendPath]
+
+  backendProcess = spawn(cmd, args, {
     cwd: path.dirname(backendPath),
     stdio: ['ignore', 'pipe', 'pipe'],
+    env: {
+      ...process.env,
+      FRONTEND_DIST: getFrontendPath(),
+    },
   })
 
   backendProcess.stdout.on('data', (data) => {
