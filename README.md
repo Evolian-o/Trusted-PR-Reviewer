@@ -2,6 +2,10 @@
 
 AI 驱动的 GitHub Pull Request 代码评审工具。配置仓库后**后台全自动监控**，发现新 PR 即刻触发多 LLM 并行评审 + 邮件通知；评审结果推送**人工决策**——合并、修复或驳回，让 AI 处理重复劳动，人专注关键判断。
 
+## Demo 视频
+
+[![Demo 视频](https://img.shields.io/badge/bilibili-00a1d6?style=for-the-badge&logo=bilibili&logoColor=white)](https://www.bilibili.com/video/BV1QGVQ6AECZ/)
+
 ## 功能
 
 | 模块 | 说明 |
