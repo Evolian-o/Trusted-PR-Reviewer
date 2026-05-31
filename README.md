@@ -1,6 +1,6 @@
 # Trusted PR Reviewer
 
-AI 驱动的 GitHub Pull Request 代码评审工具。粘贴 PR 链接或配置仓库监控，通过多个 LLM 模型自动分析代码变更，生成结构化评审报告。
+AI 驱动的 GitHub Pull Request 代码评审工具。配置仓库后**后台全自动监控**，发现新 PR 即刻触发多 LLM 并行评审 + 邮件通知；评审结果推送**人工决策**——合并、修复或驳回，让 AI 处理重复劳动，人专注关键判断。
 
 ## 功能
 
