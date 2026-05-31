@@ -6,7 +6,7 @@ from fastapi.responses import RedirectResponse, JSONResponse
 from services.auth import (
     get_login_url, complete_auth,
     AuthInfo, destroy_session,
-    SESSION_MAX_AGE_SECONDS,
+    SESSION_MAX_AGE_SECONDS, FRONTEND_URL,
 )
 from services.auth_middleware import require_auth, optional_auth
 from services.database import get_setting
@@ -29,7 +29,7 @@ async def auth_callback(code: str = Query(...)):
             await start_scheduler(auth.user_id, interval)
         except Exception:
             pass
-        response = RedirectResponse(url="http://localhost:5173/dashboard")
+        response = RedirectResponse(url=f"{FRONTEND_URL}/dashboard")
         response.set_cookie(
             key="pr_session",
             value=session_id,

@@ -10,7 +10,7 @@ from fastapi import Request
 GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET", "")
 GITHUB_REDIRECT_URI = os.environ.get("GITHUB_REDIRECT_URI", "http://localhost:8000/api/auth/callback")
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:8000")
 
 TOKEN_MAX_AGE_SECONDS = 8 * 3600  # 8 小时后校验一次
 SESSION_MAX_AGE_SECONDS = 7 * 24 * 3600  # 7 天过期

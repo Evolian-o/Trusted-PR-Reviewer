@@ -15,7 +15,7 @@ from services.database import get_email_config
 
 logger = logging.getLogger("email_notifier")
 
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:8000")
 
 # 主流邮箱 SMTP 配置，按域名自动匹配
 SMTP_CONFIGS: dict[str, tuple[str, int]] = {
