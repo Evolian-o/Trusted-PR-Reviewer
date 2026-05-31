@@ -1,12 +1,20 @@
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+
+@dataclass
+class TokenUsage:
+    input_tokens: int = 0
+    output_tokens: int = 0
+    rate_limit_remaining: int | None = None
 
 
 @dataclass
 class ReviewPrompt:
     system: str
     user: str
+    usage: TokenUsage | None = field(default=None)
 
 
 class BaseLLMProvider(ABC):

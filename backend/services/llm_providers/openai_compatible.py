@@ -1,9 +1,10 @@
 import json
 import asyncio
 import logging
+import ssl
 import aiohttp
 from collections.abc import AsyncIterator
-from .base import BaseLLMProvider, ReviewPrompt
+from .base import BaseLLMProvider, ReviewPrompt, TokenUsage
 
 logger = logging.getLogger(__name__)
 
@@ -63,15 +64,26 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
         }
+        output_chars = 0
+        api_usage: dict | None = None
+        rate_limit_remaining: int | None = None
         timeout = aiohttp.ClientTimeout(total=self._timeout, sock_read=self._timeout)
         try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            connector = aiohttp.TCPConnector(ssl=False)
+            async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
                 async with session.post(
                     f"{self._base_url}/chat/completions",
                     json=payload,
                     headers=headers,
                 ) as resp:
                     resp.raise_for_status()
+                    # 检查速率限制响应头
+                    rl_remaining = resp.headers.get("x-ratelimit-remaining-requests") or resp.headers.get("x-ratelimit-remaining-tokens")
+                    if rl_remaining is not None:
+                        try:
+                            rate_limit_remaining = int(rl_remaining)
+                        except ValueError:
+                            pass
                     async for line in resp.content:
                         line = line.decode("utf-8").strip()
                         if not line or not line.startswith("data:"):
@@ -86,7 +98,11 @@ class OpenAICompatibleProvider(BaseLLMProvider):
                                 delta = choices[0].get("delta", {})
                                 content = delta.get("content")
                                 if content:
+                                    output_chars += len(content)
                                     yield content
+                            # 最后一个 chunk 可能包含 usage 信息
+                            if "usage" in chunk:
+                                api_usage = chunk["usage"]
                         except json.JSONDecodeError:
                             continue
         except asyncio.TimeoutError:
@@ -97,6 +113,20 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         except Exception as e:
             msg = str(e).strip() or f"{type(e).__name__}"
             raise RuntimeError(f"{self._name} 调用异常: {msg}") from e
+        finally:
+            input_chars = len(prompt.system) + len(prompt.user)
+            input_tokens = max(1, round(input_chars / 3.5))
+            output_tokens = max(1, round(output_chars / 3.5)) if output_chars > 0 else 0
+            if api_usage and "prompt_tokens" in api_usage and "completion_tokens" in api_usage:
+                input_tokens = api_usage["prompt_tokens"]
+                output_tokens = api_usage["completion_tokens"]
+            prompt.usage = TokenUsage(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                rate_limit_remaining=rate_limit_remaining,
+            )
+            if rate_limit_remaining is not None and rate_limit_remaining < 10:
+                logger.warning(f"[{self._name}] 速率限制余量不足: 剩余 {rate_limit_remaining}")
 
     async def health_check(self) -> bool:
         if not self._api_key:
@@ -104,7 +134,8 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         try:
             headers = {"Authorization": f"Bearer {self._api_key}"}
             timeout = aiohttp.ClientTimeout(total=10)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            connector = aiohttp.TCPConnector(ssl=False)
+            async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
                 async with session.get(
                     f"{self._base_url}/models", headers=headers
                 ) as resp:
@@ -119,7 +150,8 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         try:
             headers = {"Authorization": f"Bearer {self._api_key}"}
             timeout = aiohttp.ClientTimeout(total=10)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            connector = aiohttp.TCPConnector(ssl=False)
+            async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
                 async with session.get(
                     f"{self._base_url}/models", headers=headers
                 ) as resp:
