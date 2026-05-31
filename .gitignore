@@ -20,12 +20,17 @@ Thumbs.db
 # Env
 .env
 .env.local
+.venv-build/
 
 # Database
 *.db
 
 # Logs
 *.log
+
+# PyInstaller
+backend/build/
+backend/backend.spec
 
 # TypeScript build info (auto-generated)
 *.tsbuildinfo
