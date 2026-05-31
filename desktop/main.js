@@ -1,6 +1,21 @@
+const path = require('path')
+
+// 确保在 Electron 环境运行（非纯 Node.js）
+if (process.type !== 'browser') {
+  const { spawn } = require('child_process')
+  const electronPath = require('electron')
+  const appDir = path.dirname(require.resolve('../desktop/package.json'))
+  const child = spawn(electronPath, [appDir], {
+    stdio: 'inherit',
+    detached: true,
+  })
+  child.unref()
+  console.log('正在启动 Trusted PR Reviewer 桌面应用...')
+  process.exit(0)
+}
+
 const { app, BrowserWindow, dialog } = require('electron')
 const { spawn } = require('child_process')
-const path = require('path')
 const http = require('http')
 
 let mainWindow = null
