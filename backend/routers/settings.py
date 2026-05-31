@@ -20,10 +20,13 @@ router = APIRouter()
 async def settings_get(auth: AuthInfo = Depends(require_auth)):
     kv = await get_all_settings(auth.user_id)
     email = await get_email_config(auth.user_id)
+    provider = kv.get("default_provider", "deepseek")
+    # 按 provider 读取模型名——不回退到全局值，避免跨 provider 串用
+    model = kv.get(f"default_model:{provider}", "")
     return {
         "poll_interval_seconds": kv.get("poll_interval_seconds", "300"),
-        "default_provider": kv.get("default_provider", "deepseek"),
-        "default_model": kv.get("default_model", ""),
+        "default_provider": provider,
+        "default_model": model,
         "chunk_max_chars": kv.get("chunk_max_chars", "8000"),
         "chunk_merge_max_chars": kv.get("chunk_merge_max_chars", "6000"),
         "chunk_max_lines": kv.get("chunk_max_lines", "2000"),
@@ -39,12 +42,21 @@ async def settings_get(auth: AuthInfo = Depends(require_auth)):
 @router.put("/api/settings")
 async def settings_update(body: SettingsBody, auth: AuthInfo = Depends(require_auth)):
     data = body.model_dump(exclude_none=True)
+
+    # 确定 default_model 归属的 provider（请求中 > 数据库已有）
+    provider = data.get("default_provider") or await get_setting(auth.user_id, "default_provider", "deepseek")
+
     for key in (
-        "poll_interval_seconds", "default_provider", "default_model",
+        "poll_interval_seconds", "default_provider",
         "chunk_max_chars", "chunk_merge_max_chars", "chunk_max_lines", "chunk_strategy",
     ):
         if key in data:
             await set_setting(auth.user_id, key, str(data[key]))
+
+    # default_model 按 provider 独立存储，避免 deepseek 模型被传给 doubao
+    if "default_model" in data:
+        await set_setting(auth.user_id, f"default_model:{provider}", str(data["default_model"]))
+        await set_setting(auth.user_id, "default_model", str(data["default_model"]))
 
     if data.get("email"):
         await save_email_config(auth.user_id, data["email"])

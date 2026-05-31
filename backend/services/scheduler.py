@@ -44,9 +44,11 @@ async def _get_default_provider(user_id: int):
 
 
 async def _get_default_model(provider_name: str, user_id: int) -> str | None:
-    model = await get_setting(user_id, "default_model", "")
+    # 按 provider 独立查询模型，避免 DeepSeek 模型被传给豆包
+    model = await get_setting(user_id, f"default_model:{provider_name}", "")
     if model:
         return model
+    # 回退到 provider 硬编码默认值
     try:
         provider = get_provider(provider_name, user_id=user_id)
         return provider.default_model or None
