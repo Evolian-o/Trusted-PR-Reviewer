@@ -14,14 +14,7 @@ logging.basicConfig(
 )
 
 from dotenv import load_dotenv
-
-# PyInstaller 打包后 sys.frozen=True，sys.executable 指向 backend.exe
-if getattr(sys, 'frozen', False):
-    BASE_DIR = os.path.dirname(sys.executable)
-else:
-    BASE_DIR = os.path.dirname(__file__)
-
-load_dotenv(os.path.join(BASE_DIR, ".env"), override=True)
+load_dotenv(os.path.join(os.path.dirname(__file__), ".env"), override=True)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -80,30 +73,3 @@ app.include_router(scheduler.router)
 app.include_router(review.router)
 app.include_router(history.router)
 app.include_router(settings.router)
-
-
-# ── 生产模式：托管前端静态文件 ──────────────────
-# 优先级: 环境变量 > exe 同级 > 开发目录
-FRONTEND_DIST = os.environ.get("FRONTEND_DIST", "")
-if not FRONTEND_DIST:
-    if getattr(sys, 'frozen', False):
-        # PyInstaller 打包后，frontend 在 exe 同级的 ../frontend/dist
-        FRONTEND_DIST = os.path.join(BASE_DIR, "..", "frontend", "dist")
-    else:
-        FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
-FRONTEND_DIST = os.path.abspath(FRONTEND_DIST)
-
-if os.path.isdir(FRONTEND_DIST):
-    from fastapi.staticfiles import StaticFiles
-    from fastapi.responses import FileResponse
-
-    assets_dir = os.path.join(FRONTEND_DIST, "assets")
-    if os.path.isdir(assets_dir):
-        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
-
-    @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str):
-        file_path = os.path.join(FRONTEND_DIST, full_path)
-        if os.path.isfile(file_path):
-            return FileResponse(file_path)
-        return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
