@@ -4,7 +4,7 @@ AI 驱动的 GitHub Pull Request 代码评审工具。配置仓库后**后台全
 
 ## Demo 视频
 
-https://www.bilibili.com/video/BV1QGVQ6AECZ/
+https://www.bilibili.com/video/BV1y4VQ6XEWP/
 
 ## 功能
 
