@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import type { RewrittenFile, FileReview } from '../types/review'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -69,9 +69,21 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
   // --- 全局错误 ---
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  // --- 滚动同步 refs ---
-  const gutterRefs = useRef<Record<string, HTMLDivElement | null>>({})
-  const overlayRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  // --- 自动调整 textarea 高度 ---
+  const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
+  const autoResizeTextarea = (el: HTMLTextAreaElement) => {
+    el.style.height = '0'
+    el.style.height = el.scrollHeight + 'px'
+  }
+  // 外部代码变更（AI 优化）时同步 textarea 高度
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      for (const [filename] of Object.entries(editedCode)) {
+        const el = textareaRefs.current[filename]
+        if (el) autoResizeTextarea(el)
+      }
+    })
+  }, [editedCode])
 
   if (rewrittenFiles.length === 0) return null
 
@@ -96,17 +108,6 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
       setTimeout(() => setCopiedFile(null), 2000)
     } catch { /* fallback */ }
   }
-
-  // --- 滚动同步 ---
-  const syncScroll = useCallback((rf: RewrittenFile) => {
-    return (e: React.UIEvent<HTMLTextAreaElement>) => {
-      const scrollTop = e.currentTarget.scrollTop
-      const gutter = gutterRefs.current[rf.filename]
-      const overlay = overlayRefs.current[rf.filename]
-      if (gutter) gutter.scrollTop = scrollTop
-      if (overlay) overlay.scrollTop = scrollTop
-    }
-  }, [])
 
   // --- Enter 自动缩进 ---
   const handleCodeKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>, rf: RewrittenFile) => {
@@ -327,53 +328,54 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
                     )}
                   </div>
                   <div className="px-4 pb-3">
-                    <div className="flex border border-gray-600 rounded-lg overflow-hidden bg-gray-900">
-                      {/* 行号 */}
-                      <div
-                        ref={(el) => { gutterRefs.current[rf.filename] = el }}
-                        className="overflow-hidden shrink-0 bg-gray-850 border-r border-gray-700/50"
-                        style={{
-                          width: codeLines.length >= 100 ? '3.5rem' : codeLines.length >= 10 ? '2.75rem' : '2.25rem',
-                        }}
-                      >
-                        <div className="text-right pr-2 pl-1.5 py-3 text-sm font-mono leading-relaxed text-gray-500 select-none">
-                          {codeLines.map((_, i) => (
-                            <div key={i} className={changedSet?.has(i + 1) ? 'text-red-400' : ''}>
-                              {i + 1}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* 编辑器主体 */}
-                      <div className="relative flex-1 min-w-0">
-                        {/* 改动标红 overlay */}
+                    {/* 外层容器统一滚动，textarea 自适应高度始终不内部滚动 */}
+                    <div className="overflow-auto max-h-[500px] border border-gray-600 rounded-lg bg-gray-900">
+                      <div className="flex">
+                        {/* 行号 */}
                         <div
-                          ref={(el) => { overlayRefs.current[rf.filename] = el }}
-                          className="absolute inset-0 overflow-hidden pointer-events-none"
-                          aria-hidden="true"
+                          className="shrink-0 bg-gray-850 border-r border-gray-700/50"
+                          style={{
+                            width: codeLines.length >= 100 ? '3.5rem' : codeLines.length >= 10 ? '2.75rem' : '2.25rem',
+                          }}
                         >
-                          <div className="py-3 text-sm font-mono leading-relaxed whitespace-pre">
+                          <div className="text-right pr-2 pl-1.5 py-3 text-sm font-mono leading-relaxed text-gray-500 select-none">
                             {codeLines.map((_, i) => (
-                              <div
-                                key={i}
-                                className={changedSet?.has(i + 1) ? 'bg-red-900/30' : ''}
-                              >
-                                {' '}
+                              <div key={i} className={changedSet?.has(i + 1) ? 'text-red-400' : ''}>
+                                {i + 1}
                               </div>
                             ))}
                           </div>
                         </div>
 
-                        <textarea
-                          value={code}
-                          onChange={(e) => setContent(rf.filename, e.target.value)}
-                          onKeyDown={(e) => handleCodeKeyDown(e, rf)}
-                          onScroll={syncScroll(rf)}
-                          className="relative w-full px-3 py-3 text-sm font-mono text-gray-300 leading-relaxed bg-transparent resize-y min-h-[200px] max-h-[500px] outline-none border-0 focus:ring-1 focus:ring-blue-500/50"
-                          spellCheck={false}
-                          rows={Math.max(10, Math.min(codeLines.length + 2, 30))}
-                        />
+                        {/* 编辑器主体 */}
+                        <div className="relative flex-1 min-w-0">
+                          {/* 改动标红 overlay */}
+                          <div
+                            className="absolute inset-0 pointer-events-none"
+                            aria-hidden="true"
+                          >
+                            <div className="py-3 text-sm font-mono leading-relaxed whitespace-pre">
+                              {codeLines.map((_, i) => (
+                                <div
+                                  key={i}
+                                  className={changedSet?.has(i + 1) ? 'bg-red-900/30' : ''}
+                                >
+                                  {' '}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <textarea
+                            ref={(el) => { textareaRefs.current[rf.filename] = el; if (el) autoResizeTextarea(el) }}
+                            value={code}
+                            onChange={(e) => setContent(rf.filename, e.target.value)}
+                            onInput={(e) => autoResizeTextarea(e.currentTarget)}
+                            onKeyDown={(e) => handleCodeKeyDown(e, rf)}
+                            className="relative w-full px-3 py-3 text-sm font-mono text-gray-300 leading-relaxed bg-transparent resize-none overflow-hidden outline-none border-0 focus:ring-1 focus:ring-blue-500/50 min-h-[120px]"
+                            spellCheck={false}
+                          />
+                        </div>
                       </div>
                     </div>
 

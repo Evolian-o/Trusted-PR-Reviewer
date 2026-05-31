@@ -27,5 +27,9 @@ Thumbs.db
 # Logs
 *.log
 
+# TypeScript build info (auto-generated)
+*.tsbuildinfo
+
 # Superpowers
 .superpowers/
+docs/superpowers/
