@@ -46,11 +46,28 @@ class FileReview(BaseModel):
     scores: dict = {}  # { overall, security, bug, performance, style } 0-100
 
 
+class RewrittenFile(BaseModel):
+    filename: str
+    language: str = ""
+    content: str = ""
+    issues_fixed: int = 0
+
+
+class UsageMetrics(BaseModel):
+    total_time_s: float = 0.0
+    llm_time_s: float = 0.0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    rate_limit_remaining: int | None = None
+
+
 class ReviewResult(BaseModel):
     owner: str
     repo: str
     pull_number: int
     pr_title: str = ""
+    pr_description: str = ""
+    pr_merged: bool = False
     files_changed: int = 0
     additions: int = 0
     deletions: int = 0
@@ -65,3 +82,7 @@ class ReviewResult(BaseModel):
     share_token: str = ""
     # 4.3: GitHub PR Review 回写
     github_review_id: int | None = None
+    # 5: AI 重写代码
+    rewritten_files: list[RewrittenFile] = []
+    # 6: 运行指标
+    usage: UsageMetrics | None = None

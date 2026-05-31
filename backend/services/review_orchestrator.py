@@ -1,7 +1,9 @@
 """评审流水线编排器 — 拉 PR → 分片 → LLM 评审 → 保存 → 通知"""
 import json
+import time
 import asyncio
 import logging
+import httpx
 
 from services.github_adapter import parse_pr_url, fetch_pr
 from services.chunking import chunk_pr as smart_chunk_pr
@@ -12,7 +14,7 @@ from services.result_formatter import parse_llm_output, build_review_result
 from services.database import save_review, get_setting
 from services.github_client import create_pr_review
 from services.email_notifier import send_review_notification
-from models.review import FileReview
+from models.review import FileReview, UsageMetrics, RewrittenFile
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +49,13 @@ async def run_review_pipeline(
         review_error   — 错误信息
         done           — 完整 ReviewResult JSON
     """
+    # 计时与 token 统计
+    pipeline_start = time.monotonic()
+    llm_time_total = 0.0
+    total_input_tokens = 0
+    total_output_tokens = 0
+    global_rate_limit: int | None = None
+
     # Step 1: 解析 URL
     yield {"event": "status", "data": "正在解析 PR URL..."}
     owner, repo, pull_number = parse_pr_url(pr_url)
@@ -63,6 +72,24 @@ async def run_review_pipeline(
             "message": f"已获取 {len(pr.files)} 个文件",
         }),
     }
+
+    # Step 2b: 检查 PR 合并状态
+    pr_merged = False
+    if token:
+        try:
+            async with httpx.AsyncClient(verify=False) as client:
+                check_resp = await client.get(
+                    f"https://api.github.com/repos/{owner}/{repo}/pulls/{pull_number}",
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        "Accept": "application/vnd.github+json",
+                    },
+                )
+                if check_resp.status_code == 200:
+                    pr_data = check_resp.json()
+                    pr_merged = pr_data.get("merged", False)
+        except Exception as e:
+            logger.warning(f"检查 PR 合并状态失败: {e}")
 
     # Step 3: 按文件智能分片
     await load_custom_providers(user_id)
@@ -120,10 +147,17 @@ async def run_review_pipeline(
             try:
                 sec_prompt = ReviewPrompt(system=build_security_prompt(), user=user_prompt)
                 sec_text = ""
+                t0 = time.monotonic()
                 async for token_text in provider.review(sec_prompt, model=model):
                     sec_text += token_text
                     yield {"event": "token", "data": token_text}
                     await asyncio.sleep(0)
+                llm_time_total += time.monotonic() - t0
+                if sec_prompt.usage:
+                    total_input_tokens += sec_prompt.usage.input_tokens
+                    total_output_tokens += sec_prompt.usage.output_tokens
+                    if sec_prompt.usage.rate_limit_remaining is not None:
+                        global_rate_limit = sec_prompt.usage.rate_limit_remaining
                 _, security_issues, _, _ = parse_llm_output(sec_text, fc.filename)
                 # 安全检查的 issues 统一标记为 security 类别
                 for si in security_issues:
@@ -148,10 +182,17 @@ async def run_review_pipeline(
         full_text = ""
         try:
             normal_prompt = ReviewPrompt(system=build_system_prompt(dimensions), user=user_prompt)
+            t0 = time.monotonic()
             async for token_text in provider.review(normal_prompt, model=model):
                 full_text += token_text
                 yield {"event": "token", "data": token_text}
                 await asyncio.sleep(0)
+            llm_time_total += time.monotonic() - t0
+            if normal_prompt.usage:
+                total_input_tokens += normal_prompt.usage.input_tokens
+                total_output_tokens += normal_prompt.usage.output_tokens
+                if normal_prompt.usage.rate_limit_remaining is not None:
+                    global_rate_limit = normal_prompt.usage.rate_limit_remaining
         except Exception as e:
             msg = str(e).strip() or f"{type(e).__name__}(无详细错误信息)"
             yield {"event": "review_error", "data": f"LLM 调用失败 [{fc.filename}]: {msg}"}
@@ -236,13 +277,111 @@ async def run_review_pipeline(
                 logger.warning(f"对比模型评审失败 [{fc.filename}]: {e}")
                 continue
 
-    # Step 6: 汇总结果
+    # Step 6: 生成 PR 摘要
+    pr_description = ""
+    try:
+        desc_prompt = ReviewPrompt(
+            system="用2-3句简洁的中文概括这个Pull Request做了什么改动，不要列出文件清单，直接说明目的和影响。",
+            user=f"PR标题: {pr.title}\n\nPR描述: {pr.description or '(无)'}\n\n变更文件({len(pr.files)}个): {', '.join(f.filename for f in pr.files[:15])}",
+        )
+        desc_text = ""
+        t0 = time.monotonic()
+        async for token_text in provider.review(desc_prompt, model=model):
+            desc_text += token_text
+        llm_time_total += time.monotonic() - t0
+        if desc_prompt.usage:
+            total_input_tokens += desc_prompt.usage.input_tokens
+            total_output_tokens += desc_prompt.usage.output_tokens
+        pr_description = desc_text.strip()[:300]
+    except Exception as e:
+        logger.warning(f"PR 摘要生成失败: {e}")
+        pr_description = pr.description.strip()[:300] if pr.description else ""
+
+    # Step 6b: 为有问题的文件生成 AI 重写代码
+    rewritten_files: list[RewrittenFile] = []
+    files_with_issues = [fr for fr in file_reviews if fr.issues]
+    if files_with_issues:
+        yield {"event": "status", "data": f"正在生成 {len(files_with_issues)} 个文件的修复代码..."}
+        for fr in files_with_issues:
+            fc = next((c for c in chunks if c.filename == fr.file), None)
+            if not fc or not fc.patch:
+                continue
+            line_count = fc.patch.count("\n")
+            if line_count > 4000:
+                logger.info(f"跳过重写 [{fr.file}]: patch 过大 ({line_count} 行)")
+                continue
+            try:
+                issues_text_parts = []
+                for issue in fr.issues:
+                    parts = [f"[{issue.severity.upper()}] {issue.category}: {issue.description}"]
+                    if issue.suggestion:
+                        parts.append(f"  修复建议: {issue.suggestion}")
+                    if issue.current_code:
+                        parts.append(f"  当前代码:\n```\n{issue.current_code}\n```")
+                    if issue.proposed_code:
+                        parts.append(f"  修复后代码:\n```\n{issue.proposed_code}\n```")
+                    issues_text_parts.append("\n".join(parts))
+                issues_context = "\n---\n".join(issues_text_parts)
+
+                yield {
+                    "event": "progress",
+                    "data": json.dumps({
+                        "phase": "rewriting",
+                        "current": rewritten_files.__len__() + 1,
+                        "total": len(files_with_issues),
+                        "file": fr.file,
+                        "language": fc.language,
+                    }),
+                }
+
+                rewrite_prompt = ReviewPrompt(
+                    system="你是代码修复专家。根据审查发现的问题和修复建议，输出完整的修复后代码。只输出代码，不要包含任何解释或注释说明。确保修复后的代码是可运行的。",
+                    user=f"文件: {fr.file}\n语言: {fc.language}\n\n原始代码 diff:\n{fc.patch[:6000]}\n\n发现 {len(fr.issues)} 个问题:\n{issues_context[:4000]}",
+                )
+                rewritten_text = ""
+                t0 = time.monotonic()
+                async for token_text in provider.review(rewrite_prompt, model=model):
+                    rewritten_text += token_text
+                llm_time_total += time.monotonic() - t0
+                if rewrite_prompt.usage:
+                    total_input_tokens += rewrite_prompt.usage.input_tokens
+                    total_output_tokens += rewrite_prompt.usage.output_tokens
+
+                code = rewritten_text.strip()
+                code = code.removeprefix("```").removesuffix("```").strip()
+                if code.startswith(fc.language or "python"):
+                    nl = code.find("\n")
+                    if nl > 0:
+                        code = code[nl + 1:]
+
+                rewritten_files.append(RewrittenFile(
+                    filename=fr.file,
+                    language=fc.language,
+                    content=code,
+                    issues_fixed=len(fr.issues),
+                ))
+            except Exception as e:
+                logger.warning(f"重写代码失败 [{fr.file}]: {e}")
+
+    # Step 7: 汇总结果
+    total_time = time.monotonic() - pipeline_start
+    usage = UsageMetrics(
+        total_time_s=round(total_time, 1),
+        llm_time_s=round(llm_time_total, 1),
+        input_tokens=total_input_tokens,
+        output_tokens=total_output_tokens,
+        rate_limit_remaining=global_rate_limit,
+    )
     result = build_review_result(
         pr_title=pr.title,
         owner=owner, repo=repo, pull_number=pull_number,
         files_changed=len(pr.files),
         additions=pr.additions, deletions=pr.deletions,
         file_reviews=file_reviews,
+        pr_description=pr_description,
+        pr_merged=pr_merged,
+        rewritten_files=[rf.model_dump(mode="json") for rf in rewritten_files],
+        usage=usage.model_dump() if usage else None,
     )
 
     # 持久化保存
@@ -295,6 +434,7 @@ async def run_review_pipeline(
             files_changed=len(pr.files),
             additions=pr.additions, deletions=pr.deletions,
             file_reviews=compare_reviews,
+            pr_merged=pr_merged,
         )
         yield {
             "event": "compare_done",

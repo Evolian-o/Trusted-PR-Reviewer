@@ -252,6 +252,11 @@ def build_review_result(
     additions: int,
     deletions: int,
     file_reviews: list[FileReview],
+    *,
+    pr_description: str = "",
+    pr_merged: bool = False,
+    rewritten_files: list = [],
+    usage: dict | None = None,
 ) -> ReviewResult:
     all_issues: list[Issue] = []
     all_suggestions: list[str] = []
@@ -284,6 +289,8 @@ def build_review_result(
         repo=repo,
         pull_number=pull_number,
         pr_title=pr_title,
+        pr_description=pr_description,
+        pr_merged=pr_merged,
         files_changed=files_changed,
         additions=additions,
         deletions=deletions,
@@ -293,4 +300,6 @@ def build_review_result(
         issues=all_issues,
         suggestions=all_suggestions,
         scores=agg_scores,
+        rewritten_files=rewritten_files,
+        usage=usage,
     )
