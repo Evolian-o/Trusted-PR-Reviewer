@@ -1,0 +1,36 @@
+{
+  "name": "trusted-pr-reviewer",
+  "version": "1.0.0",
+  "description": "AI 驱动的 GitHub PR 代码评审工具",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "prestart": "cd ../frontend && npm run build",
+    "build": "electron-builder"
+  },
+  "build": {
+    "appId": "com.trusted-pr-reviewer.app",
+    "productName": "Trusted PR Reviewer",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend",
+        "to": "backend"
+      },
+      {
+        "from": "../frontend/dist",
+        "to": "frontend/dist"
+      }
+    ]
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  }
+}
