@@ -30,7 +30,7 @@ class OllamaProvider(BaseLLMProvider):
         }
         timeout = aiohttp.ClientTimeout(total=600)  # 10 分钟，首次请求需要模型加载时间
         try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with aiohttp.ClientSession(timeout=timeout, connector=aiohttp.TCPConnector(ssl=False)) as session:
                 async with session.post(f"{OLLAMA_API}/chat", json=payload) as resp:
                     resp.raise_for_status()
                     async for line in resp.content:
@@ -57,7 +57,7 @@ class OllamaProvider(BaseLLMProvider):
     async def health_check(self) -> bool:
         try:
             timeout = aiohttp.ClientTimeout(total=10)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with aiohttp.ClientSession(timeout=timeout, connector=aiohttp.TCPConnector(ssl=False)) as session:
                 async with session.get(f"{OLLAMA_BASE}/api/tags") as resp:
                     return resp.status == 200
         except aiohttp.ClientError:

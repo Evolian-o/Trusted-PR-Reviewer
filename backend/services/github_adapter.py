@@ -35,7 +35,8 @@ async def fetch_pr(owner: str, repo: str, pull_number: int, token: str | None = 
         headers["Authorization"] = f"Bearer {token}"
 
     timeout = aiohttp.ClientTimeout(total=30)
-    async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
+    connector = aiohttp.TCPConnector(ssl=False)
+    async with aiohttp.ClientSession(headers=headers, timeout=timeout, connector=connector) as session:
         pr_url = f"{GITHUB_API}/repos/{owner}/{repo}/pulls/{pull_number}"
         async with session.get(pr_url) as resp:
             if resp.status == 404:
@@ -98,7 +99,8 @@ async def fetch_file_content(
         headers["Authorization"] = f"Bearer {token}"
 
     timeout = aiohttp.ClientTimeout(total=15)
-    async with aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
+    connector = aiohttp.TCPConnector(ssl=False)
+    async with aiohttp.ClientSession(headers=headers, timeout=timeout, connector=connector) as session:
         url = f"{GITHUB_API}/repos/{owner}/{repo}/contents/{path}"
         async with session.get(url, params={"ref": ref}) as resp:
             if resp.status == 404:
