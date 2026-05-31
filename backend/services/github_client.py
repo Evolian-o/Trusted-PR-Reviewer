@@ -90,9 +90,9 @@ async def create_pr_review(
     comments: list[dict] | None = None,
     token: str | None = None,
 ) -> dict | None:
-    """向 GitHub PR 提交评审评论"""
+    """向 GitHub PR 提交评审评论，返回 result dict 或包含 error 字段的 dict"""
     if not token:
-        return None
+        return {"error": "未认证，请先登录 GitHub"}
 
     payload: dict = {
         "commit_id": commit_id,
@@ -109,6 +109,20 @@ async def create_pr_review(
             token=token,
         )
     except Exception as e:
+        msg = str(e).strip() or f"{type(e).__name__}"
+        # 提取 httpx HTTPStatusError 中的响应体
+        try:
+            if hasattr(e, 'response') and e.response is not None:
+                body_text = e.response.text[:500] if hasattr(e.response, 'text') else ''
+                if body_text:
+                    import json as _json
+                    try:
+                        err_data = _json.loads(body_text)
+                        msg = err_data.get("message", msg)
+                    except Exception:
+                        msg = body_text[:200] or msg
+        except Exception:
+            pass
         import logging
-        logging.getLogger(__name__).warning(f"GitHub PR Review 提交失败: {e}")
-        return None
+        logging.getLogger(__name__).warning(f"GitHub PR Review 提交失败: {msg}")
+        return {"error": msg}

@@ -53,6 +53,8 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
   const [copiedFile, setCopiedFile] = useState<string | null>(null)
   const [fixing, setFixing] = useState(false)
   const [fixResult, setFixResult] = useState<{ ok: boolean; message: string; commit_url?: string } | null>(null)
+  const [submittingReview, setSubmittingReview] = useState(false)
+  const [submitResult, setSubmitResult] = useState<{ ok: boolean; message: string; html_url?: string } | null>(null)
   const { auth } = useAuth()
 
   // --- 源代码面板 ---
@@ -242,6 +244,45 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
     }
   }
 
+  // --- 提交评审意见到 PR ---
+  const handleSubmitReview = async () => {
+    const parts: string[] = []
+    let hasContent = false
+    for (const rf of rewrittenFiles) {
+      const comment = (reviewComment[rf.filename] || '').trim()
+      if (comment) {
+        hasContent = true
+        parts.push(`## ${rf.filename}\n\n${comment}`)
+      }
+    }
+    if (!hasContent) {
+      setSubmitResult({ ok: false, message: '请先在评审意见区撰写内容' })
+      return
+    }
+    const reviewText = `## AI 代码评审报告\n\n以下是对 ${rewrittenFiles.length} 个重写文件的评审意见：\n\n${parts.join('\n\n---\n\n')}`
+
+    setSubmittingReview(true)
+    setSubmitResult(null)
+    try {
+      const resp = await fetch(`/api/repos/${owner}/${repo}/pulls/${pullNumber}/submit-review`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ review_text: reviewText }),
+      })
+      const data = await resp.json()
+      if (resp.ok && data.ok) {
+        setSubmitResult({ ok: true, message: data.message, html_url: data.html_url })
+      } else {
+        setSubmitResult({ ok: false, message: data.error || data.message || '提交失败' })
+      }
+    } catch {
+      setSubmitResult({ ok: false, message: '网络错误，请重试' })
+    } finally {
+      setSubmittingReview(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
       {/* 顶部工具栏 */}
@@ -253,15 +294,37 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
           </span>
         </h2>
         {auth.authenticated && (
-          <button
-            onClick={handleFixPR}
-            disabled={fixing}
-            className="text-sm px-3 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-lg transition-colors disabled:opacity-50"
-          >
-            {fixing ? '提交中...' : '提交修复到 PR'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSubmitReview}
+              disabled={submittingReview}
+              className="text-sm px-3 py-1.5 bg-blue-700 hover:bg-blue-600 text-white rounded-lg transition-colors disabled:opacity-50"
+            >
+              {submittingReview ? '提交中...' : '提交评审意见'}
+            </button>
+            <button
+              onClick={handleFixPR}
+              disabled={fixing}
+              className="text-sm px-3 py-1.5 bg-green-700 hover:bg-green-600 text-white rounded-lg transition-colors disabled:opacity-50"
+            >
+              {fixing ? '提交中...' : '提交修复到 PR'}
+            </button>
+          </div>
         )}
       </div>
+
+      {submitResult && (
+        <div className={`px-4 py-2 rounded-lg text-sm ${
+          submitResult.ok ? 'bg-green-900/40 text-green-300 border border-green-700' : 'bg-red-900/40 text-red-300 border border-red-700'
+        }`}>
+          {submitResult.message}
+          {submitResult.html_url && (
+            <a href={submitResult.html_url} target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-400 hover:text-blue-300 underline">
+              查看 PR &rarr;
+            </a>
+          )}
+        </div>
+      )}
 
       {fixResult && (
         <div className={`px-4 py-2 rounded-lg text-sm ${

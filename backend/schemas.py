@@ -39,6 +39,10 @@ class OptimizeCodeBody(BaseModel):
     model: str | None = None
 
 
+class SubmitReviewBody(BaseModel):
+    review_text: str
+
+
 class PolishReviewBody(BaseModel):
     draft_text: str
     provider: str = "deepseek"

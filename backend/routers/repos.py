@@ -4,13 +4,13 @@ import httpx
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
-from schemas import MonitorBody, CreatePRBody, MergeBody, FixPRBody, SuggestFixBody, OptimizeCodeBody, PolishReviewBody
+from schemas import MonitorBody, CreatePRBody, MergeBody, FixPRBody, SuggestFixBody, OptimizeCodeBody, PolishReviewBody, SubmitReviewBody
 from services.auth_middleware import require_auth
 from services.auth import AuthInfo
 from services.database import (
     list_monitored_repos, add_monitored_repo, remove_monitored_repo,
 )
-from services.github_client import check_repo_exists, merge_pr
+from services.github_client import check_repo_exists, merge_pr, create_pr_review
 
 router = APIRouter()
 
@@ -354,3 +354,49 @@ async def repo_polish_review(owner: str, repo: str, pull_number: int, body: Poli
         return {"polished_text": polished}
     except Exception as e:
         return JSONResponse(content={"error": f"AI 润色失败: {e}"}, status_code=500)
+
+
+@router.post("/api/repos/{owner}/{repo}/pulls/{pull_number}/submit-review")
+async def repo_submit_review(owner: str, repo: str, pull_number: int, body: SubmitReviewBody, auth: AuthInfo = Depends(require_auth)):
+    """将评审意见作为 PR Review 提交到 GitHub，告知 PR 作者评审结果"""
+    if not body.review_text.strip():
+        return JSONResponse(content={"error": "评审意见不能为空"}, status_code=400)
+
+    # 获取 PR 的 head SHA
+    try:
+        async with httpx.AsyncClient(verify=False) as client:
+            pr_resp = await client.get(
+                f"https://api.github.com/repos/{owner}/{repo}/pulls/{pull_number}",
+                headers={
+                    "Authorization": f"Bearer {auth.github_token}",
+                    "Accept": "application/vnd.github+json",
+                },
+            )
+            pr_resp.raise_for_status()
+            pr_data = pr_resp.json()
+            head_sha = pr_data.get("head", {}).get("sha", "")
+            if not head_sha:
+                return JSONResponse(content={"error": "无法获取 PR head commit SHA"}, status_code=400)
+    except Exception as e:
+        return JSONResponse(content={"error": f"获取 PR 信息失败: {e}"}, status_code=500)
+
+    # 提交 PR Review
+    result = await create_pr_review(
+        owner=owner,
+        repo=repo,
+        pull_number=pull_number,
+        commit_id=head_sha,
+        body=body.review_text[:2000],
+        token=auth.github_token,
+    )
+
+    if result is None or "error" in result:
+        err_msg = result.get("error", "提交评审到 GitHub 失败") if result else "提交评审到 GitHub 失败"
+        return JSONResponse(content={"error": err_msg}, status_code=400)
+
+    return {
+        "ok": True,
+        "message": "评审意见已提交到 PR",
+        "review_id": result.get("id"),
+        "html_url": result.get("html_url", f"https://github.com/{owner}/{repo}/pull/{pull_number}"),
+    }
