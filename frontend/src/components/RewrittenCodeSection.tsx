@@ -10,6 +10,12 @@ interface Props {
   pullNumber: number
   provider: string
   model: string | null
+  editedCode: Record<string, string>
+  onEditedCodeChange: React.Dispatch<React.SetStateAction<Record<string, string>>>
+  changedRanges: Record<string, Set<number>>
+  onChangedRangesChange: React.Dispatch<React.SetStateAction<Record<string, Set<number>>>>
+  aiSuggestion: Record<string, string>
+  onAiSuggestionChange: React.Dispatch<React.SetStateAction<Record<string, string>>>
 }
 
 /** 简单行级 diff：返回新代码中与原代码不同的行号 (1-indexed) */
@@ -42,7 +48,7 @@ function buildDefaultReview(rf: RewrittenFile, fileReviews: FileReview[]): strin
   return parts.join('\n\n')
 }
 
-export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owner, repo, pullNumber, provider, model }: Props) {
+export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owner, repo, pullNumber, provider, model, editedCode, onEditedCodeChange, changedRanges, onChangedRangesChange, aiSuggestion, onAiSuggestionChange }: Props) {
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set(rewrittenFiles.map(f => f.filename)))
   const [copiedFile, setCopiedFile] = useState<string | null>(null)
   const [fixing, setFixing] = useState(false)
@@ -50,9 +56,6 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
   const { auth } = useAuth()
 
   // --- 源代码面板 ---
-  const [editedCode, setEditedCode] = useState<Record<string, string>>({})
-  const [changedRanges, setChangedRanges] = useState<Record<string, Set<number>>>({})
-  const [aiSuggestion, setAiSuggestion] = useState<Record<string, string>>({})
   const [optimizing, setOptimizing] = useState<Set<string>>(new Set())
 
   // --- 评审意见面板 ---
@@ -89,7 +92,7 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
 
   const getContent = (rf: RewrittenFile) => editedCode[rf.filename] ?? rf.content
   const setContent = (filename: string, value: string) => {
-    setEditedCode(prev => ({ ...prev, [filename]: value }))
+    onEditedCodeChange(prev => ({ ...prev, [filename]: value }))
   }
 
   const toggle = (filename: string) => {
@@ -156,9 +159,9 @@ export default function RewrittenCodeSection({ rewrittenFiles, fileReviews, owne
       const data = await resp.json()
       if (resp.ok && data.optimized_code) {
         setContent(rf.filename, data.optimized_code)
-        setChangedRanges(prev => ({ ...prev, [rf.filename]: computeChangedLines(oldCode, data.optimized_code) }))
+        onChangedRangesChange(prev => ({ ...prev, [rf.filename]: computeChangedLines(oldCode, data.optimized_code) }))
         if (data.suggestion) {
-          setAiSuggestion(prev => ({ ...prev, [rf.filename]: data.suggestion }))
+          onAiSuggestionChange(prev => ({ ...prev, [rf.filename]: data.suggestion }))
         }
       } else {
         setErrors(prev => ({ ...prev, [rf.filename]: data.error || '优化失败' }))

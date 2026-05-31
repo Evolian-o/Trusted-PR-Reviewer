@@ -23,7 +23,7 @@ export default function ReviewSidebar({ filesForNav, activeNav, sidebarOpen, onC
 
   return (
     <>
-      <aside className={`fixed left-0 top-0 h-full w-56 bg-gray-900 border-r border-gray-700/50 z-40 flex flex-col shadow-xl shadow-black/30 transition-transform duration-200 ${
+      <aside className={`no-print fixed left-0 top-0 h-full w-56 bg-gray-900 border-r border-gray-700/50 z-40 flex flex-col shadow-xl shadow-black/30 transition-transform duration-200 ${
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       } md:translate-x-0`}>
         <div className="p-4 border-b border-gray-700/50">

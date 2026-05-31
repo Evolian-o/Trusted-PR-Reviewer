@@ -43,6 +43,9 @@ export default function ReviewReportPage() {
   const [activeNav, setActiveNav] = useState('overview')
   const [trend, setTrend] = useState<TrendEntry[]>([])
   const [streamedFileReviews, setStreamedFileReviews] = useState<FileReview[]>([])
+  const [editedCode, setEditedCode] = useState<Record<string, string>>({})
+  const [changedRanges, setChangedRanges] = useState<Record<string, Set<number>>>({})
+  const [aiSuggestion, setAiSuggestion] = useState<Record<string, string>>({})
   const reviewSectionRef = useRef<HTMLDivElement>(null)
   const overviewRef = useRef<HTMLDivElement>(null)
   const codeReviewRef = useRef<HTMLDivElement>(null)
@@ -361,11 +364,17 @@ export default function ReviewReportPage() {
                   pullNumber={result.pull_number}
                   provider={provider}
                   model={model}
+                  editedCode={editedCode}
+                  onEditedCodeChange={setEditedCode}
+                  changedRanges={changedRanges}
+                  onChangedRangesChange={setChangedRanges}
+                  aiSuggestion={aiSuggestion}
+                  onAiSuggestionChange={setAiSuggestion}
                 />
               )}
 
               <div ref={exportRef} id="export" className="scroll-mt-16">
-                <ExportToolbar result={result} />
+                <ExportToolbar result={result} editedCode={editedCode} changedRanges={changedRanges} />
               </div>
             </div>
 
