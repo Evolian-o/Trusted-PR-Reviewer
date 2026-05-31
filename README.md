@@ -4,7 +4,7 @@ AI 驱动的 GitHub Pull Request 代码评审工具。配置仓库后**后台全
 
 ## Demo 视频
 
-[![Demo 视频](https://img.shields.io/badge/bilibili-00a1d6?style=for-the-badge&logo=bilibili&logoColor=white)](https://www.bilibili.com/video/BV1QGVQ6AECZ/)
+https://www.bilibili.com/video/BV1QGVQ6AECZ/
 
 ## 功能
 
